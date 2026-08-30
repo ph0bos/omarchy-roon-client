@@ -9,6 +9,7 @@ verbs a real one does.
     control()     transport verbs
     browse()      the browse tree
     load()        a page of it
+    queue()       the pinned zone's queue, kept live
     run_forever() reconnect until told to stop
 
 Three protocol facts the shape here exists to respect, all learned against a live
@@ -35,6 +36,7 @@ from typing import Callable
 from . import discovery, palette
 from .endpoint import OutputFormat
 from .moo import Moo, MooError
+from .queue import QueueStore
 from .zones import ZoneStore
 
 
@@ -54,6 +56,15 @@ PALETTE_CACHE_MAX = 256
 TRANSPORT = "com.roonlabs.transport:2"
 BROWSE = "com.roonlabs.browse:1"
 IMAGE = "com.roonlabs.image:1"
+
+# Subscription keys are ours to choose; they only have to be distinct, because
+# every message from a subscription carries the key it belongs to.
+ZONES_SUBSCRIPTION_KEY = 1
+QUEUE_SUBSCRIPTION_KEY = 2
+
+# Deep enough that scrolling the queue never waits on the Core, shallow enough
+# that a 10,000-track playlist does not arrive as one message.
+QUEUE_MAX_ITEMS = 100
 
 REGINFO = {
     "extension_id": "org.omarchy.roon",
@@ -115,11 +126,19 @@ class RoonSession:
         self.host, self.port = host, port
         self.tokens = tokens or TokenStore()
         self.zones = ZoneStore()
+        self.queue = QueueStore()
         self._palettes: dict[str, dict] = {}
         self._output = OutputFormat()
         self.core: discovery.Core | None = None
         self.core_id: str | None = None
         self.connected = False
+        # Why we are not connected, kept rather than only announced. The
+        # callbacks fire once, at the moment it happens; a surface that opens
+        # afterwards has to be able to ask. `awaiting_approval` is separate from
+        # `last_error` because it is not an error -- nothing is broken, someone
+        # simply has to say yes somewhere else.
+        self.awaiting_approval: str | None = None
+        self.last_error: str = ""
         self._config_path = _config_path()
         _config = self._load_config()
         self._pinned_zone_id: str | None = _config.get("pinned_zone_id")
@@ -131,11 +150,14 @@ class RoonSession:
         self.on_disconnected: Callable[[str], None] | None = None
         self.on_awaiting_approval: Callable[[str], None] | None = None
         self.on_pinned_changed: Callable[[str | None], None] | None = None
+        self.on_queue: Callable[[str | None], None] | None = None
 
         self._moo: Moo | None = None
         self._send_lock = threading.Lock()
         self._pending: dict[int, list] = {}      # reqid -> [Event, Message|None]
         self._streams: dict[int, Callable] = {}  # reqid -> handler
+        self._queue_reqid: int | None = None
+        self._queue_zone_id: str | None = None
         self._stop = threading.Event()
 
     # -- the pinned zone -------------------------------------------------
@@ -200,6 +222,9 @@ class RoonSession:
     def pin(self, zone_id: str | None) -> None:
         self._pinned_zone_id = zone_id
         self._save_config(pinned_zone_id=zone_id)
+        # The queue follows the pin, and only the pin: this is the one moment it
+        # is allowed to cost a round trip.
+        self._ensure_queue_subscription()
         if self.on_pinned_changed:
             self.on_pinned_changed(zone_id)
 
@@ -259,6 +284,75 @@ class RoonSession:
     def change_settings(self, zone_id: str, **settings):
         return self.call(f"{TRANSPORT}/change_settings",
                          {"zone_or_output_id": zone_id, **settings})
+
+    def play_from_here(self, zone_id: str, queue_item_id) -> object:
+        """Jump to an item already in the queue, keeping everything after it.
+
+        The only way to start playback from a queue entry: there is no "play
+        item n". `queue_item_id` is the Core's own handle and the position of an
+        item is not usable in its place -- the list edits underneath it.
+        """
+        return self.call(f"{TRANSPORT}/play_from_here",
+                         {"zone_or_output_id": zone_id,
+                          "queue_item_id": queue_item_id})
+
+    # -- the queue subscription ------------------------------------------
+    #
+    # One subscription, following the pinned zone, re-subscribed only when the
+    # pin moves. Everything here is fire-and-forget rather than `call()`,
+    # because `_ensure_queue_subscription` runs on the read loop's own thread:
+    # waiting there for a reply the same thread has to read is a deadlock.
+
+    def subscribe_queue(self, zone_id: str,
+                        max_item_count: int = QUEUE_MAX_ITEMS) -> None:
+        if self._queue_reqid is not None:
+            self.unsubscribe_queue()
+        self.queue.reset(zone_id)
+        self._queue_zone_id = zone_id
+        self._queue_reqid = self._request(
+            f"{TRANSPORT}/subscribe_queue",
+            {"subscription_key": QUEUE_SUBSCRIPTION_KEY,
+             "zone_or_output_id": zone_id,
+             "max_item_count": max_item_count},
+            stream=self._on_queue_message)
+
+    def unsubscribe_queue(self) -> None:
+        reqid, self._queue_reqid = self._queue_reqid, None
+        self._queue_zone_id = None
+        self.queue.reset(None)
+        if reqid is None:
+            return
+        self._streams.pop(reqid, None)
+        try:
+            self._request(f"{TRANSPORT}/unsubscribe_queue",
+                          {"subscription_key": QUEUE_SUBSCRIPTION_KEY})
+        except MooError:
+            pass          # the connection is gone; there is nothing to leave
+
+    def _ensure_queue_subscription(self) -> None:
+        """Point the queue at whichever zone is pinned now. Cheap when unchanged."""
+        if not self.connected:
+            return
+        zone_id = self.pinned_zone_id
+        if zone_id == self._queue_zone_id:
+            return
+        if zone_id is None:
+            self.unsubscribe_queue()
+        else:
+            self.subscribe_queue(zone_id)
+
+    def _on_queue_message(self, msg) -> None:
+        changed = self.queue.apply(msg.name, msg.body)
+        if self.queue.stale:
+            # An edit we do not understand means our copy no longer matches the
+            # Core's. Re-subscribing is the only honest repair, and it costs one
+            # round trip per unknown operation rather than a permanent lie.
+            zone_id = self._queue_zone_id
+            if zone_id:
+                self.subscribe_queue(zone_id)
+            return
+        if changed and self.on_queue:
+            self.on_queue(self._queue_zone_id)
 
     # -- browse ----------------------------------------------------------
     def browse(self, hierarchy: str = "browse", **opts):
@@ -371,15 +465,22 @@ class RoonSession:
         if body.get("token") and body.get("core_id"):
             self.tokens.put(body["core_id"], body["token"])
 
-        self._request(f"{TRANSPORT}/subscribe_zones", {"subscription_key": 1},
+        self._request(f"{TRANSPORT}/subscribe_zones",
+                      {"subscription_key": ZONES_SUBSCRIPTION_KEY},
                       stream=self._on_zone_message)
         self.connected = True
+        self.awaiting_approval = None
+        self.last_error = ""
         if self.on_connected:
             self.on_connected(body)
         return True
 
     def _on_zone_message(self, msg) -> None:
         touched = self.zones.apply(msg.name, msg.body)
+        # The pinned zone is only knowable once zones have arrived, so this is
+        # also where the first queue subscription is made.
+        if touched:
+            self._ensure_queue_subscription()
         if touched and self.on_zones:
             self.on_zones(touched)
 
@@ -414,6 +515,11 @@ class RoonSession:
             slot[0].set()
         self._pending.clear()
         self._streams.clear()
+        # Forget the subscription rather than the queue's contents: the
+        # interface keeps rendering the last known list while reconnecting, and
+        # the first zone message afterwards subscribes again.
+        self._queue_reqid = None
+        self._queue_zone_id = None
 
     def stop(self) -> None:
         self._stop.set()
@@ -430,6 +536,7 @@ class RoonSession:
                 else:
                     raise MooError("no Core found")
             except AwaitingApproval as e:
+                self.awaiting_approval = str(e)
                 if self.on_awaiting_approval:
                     self.on_awaiting_approval(str(e))
                 self.connected = False
@@ -438,6 +545,7 @@ class RoonSession:
                 continue
             except (MooError, OSError) as e:
                 reason = str(e) or e.__class__.__name__
+                self.last_error = reason
                 if self.connected and self.on_disconnected:
                     self.on_disconnected(reason)
                 self.connected = False

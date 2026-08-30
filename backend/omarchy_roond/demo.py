@@ -10,7 +10,7 @@ The second is that building an interface should not require a paid subscription
 and a Core on the LAN. `--demo` gives the whole surface something to render.
 
 It implements the same seam `RoonSession` does, which is the point of keeping
-that seam narrow: connect, control, browse, load, and a zone store.
+that seam narrow: connect, control, browse, load, a zone store and a queue.
 """
 from __future__ import annotations
 
@@ -35,6 +35,34 @@ TRACKS = [
     ("Everything Nearby", "Field Notes", "Quiet Machines", 231),
 ]
 
+# An invented library, so the browse surfaces can be built and photographed
+# without a subscription and without anyone's listening history. Shaped exactly
+# like a Core's: a tree of {title, subtitle, image_key, item_key, hint}, where a
+# "list" pushes deeper and an "action" plays something.
+ALBUMS = [
+    ("Slow Light", "Nocturne Atlas", 9),
+    ("Quiet Machines", "Field Notes", 7),
+    ("Ardent Hours", "Winter Count", 11),
+]
+
+DEMO_TREE = {
+    # item_key -> (list title, [items])
+    "root": ("Explore", [
+        ("demo:library", "Library", None, "list"),
+        ("demo:albums", "Albums", "%d albums" % len(ALBUMS), "list"),
+        ("demo:artists", "Artists", "%d artists" % len(ALBUMS), "list"),
+        ("demo:radio", "My Live Radio", None, "list"),
+    ]),
+    "demo:library": ("Library", [
+        ("demo:albums", "Albums", None, "list"),
+        ("demo:artists", "Artists", None, "list"),
+    ]),
+    "demo:radio": ("My Live Radio", [
+        ("demo:station-0", "Coastal Shipping FM", "Ambient", "action"),
+        ("demo:station-1", "Night Works Radio", "Electronic", "action"),
+    ]),
+}
+
 
 class _Reply:
     def __init__(self, name="Success", body=None):
@@ -47,21 +75,27 @@ class DemoCore:
 
 class DemoSession:
     def __init__(self, port: int = 9821):
+        from .queue import QueueStore
         from .zones import ZoneStore
 
         self.port = port
         self.core = DemoCore()
         self.core.http_port = port
         self.core_id = "demo-core"
+        # There is no Core to fetch art from, so the daemon serves the invented
+        # sleeve itself and publishes that as the base every surface builds on.
+        self.image_base = f"http://127.0.0.1:{port}/demo-art"
         self.connected = True
         self.notifications = True
         self.zones = ZoneStore()
+        self.queue = QueueStore()
 
         self.on_zones = None
         self.on_connected = None
         self.on_disconnected = None
         self.on_awaiting_approval = None
         self.on_pinned_changed = None
+        self.on_queue = None
 
         self._tracks = itertools.cycle(TRACKS)
         self._track = next(self._tracks)
@@ -70,8 +104,11 @@ class DemoSession:
         self._volume = -18.0
         self._muted = False
         self._pinned = "demo-zone-0"
+        # One browse position per multi_session_key, exactly as a Core keeps it.
+        self._cursors: dict[str, str] = {}
         self._stop = threading.Event()
         self.zones.apply("Subscribed", {"zones": self._build()})
+        self.subscribe_queue(self._pinned)
 
     # -- the world -------------------------------------------------------
     def _build(self):
@@ -116,6 +153,21 @@ class DemoSession:
             })
         return out
 
+    def _queue_items(self):
+        """Twelve invented tracks, matching the `queue_items_remaining` above."""
+        items = []
+        for i in range(12):
+            title, artist, album, length = TRACKS[i % len(TRACKS)]
+            items.append({
+                "queue_item_id": 1000 + i,
+                "length": length,
+                "image_key": DEMO_IMAGE_KEY,
+                "one_line": {"line1": f"{title} - {artist}"},
+                "two_line": {"line1": title, "line2": artist},
+                "three_line": {"line1": title, "line2": artist, "line3": album},
+            })
+        return items
+
     def _push(self):
         self.zones.apply("Subscribed", {"zones": self._build()})
         if self.on_zones:
@@ -132,6 +184,7 @@ class DemoSession:
     def pin(self, zone_id):
         if zone_id:
             self._pinned = zone_id
+        self.subscribe_queue(self._pinned)
         self._push()
         if self.on_pinned_changed:
             self.on_pinned_changed(self._pinned)
@@ -168,12 +221,144 @@ class DemoSession:
     def change_settings(self, zone_id, **settings):
         return _Reply()
 
+    def subscribe_queue(self, zone_id, max_item_count=100):
+        self.queue.reset(zone_id)
+        self.queue.apply("Subscribed", {"items": self._queue_items()[:max_item_count]})
+        if self.on_queue:
+            self.on_queue(zone_id)
+
+    def unsubscribe_queue(self):
+        self.queue.reset(None)
+
+    def play_from_here(self, zone_id, queue_item_id):
+        """Start from a queue item, and drop what came before it.
+
+        The demo queue shrinks the way a real one does, so a surface that
+        re-reads after playing from the middle sees a shorter list rather than
+        the same one.
+        """
+        index = next((i for i, item in enumerate(self.queue.all())
+                      if item.get("queue_item_id") == queue_item_id), None)
+        if index is None:
+            return _Reply("InvalidRequest", {"message": "no such queue item"})
+        self.queue.apply("Changed",
+                         {"changes": [{"operation": "remove",
+                                       "index": 0, "count": index}]})
+        title, artist, album, length = TRACKS[index % len(TRACKS)]
+        self._track = (title, artist, album, length)
+        self._position = 0.0
+        self._state = "playing"
+        if self.on_queue:
+            self.on_queue(zone_id)
+        self._push()
+        return _Reply()
+
+    # -- browsing --------------------------------------------------------
+    #
+    # The same stateful cursor a real Core keeps: one position per
+    # `multi_session_key`, moved by browse and read by load. Getting this
+    # honestly wrong-shaped would make the demo useless for building the browse
+    # surfaces, which is the whole reason it exists.
+
+    def _album_items(self):
+        return [(f"demo:album-{i}", title, artist, "list")
+                for i, (title, artist, _n) in enumerate(ALBUMS)]
+
+    def _artist_items(self):
+        return [(f"demo:artist-{i}", artist, f"{n} albums", "list")
+                for i, (_t, artist, n) in enumerate(ALBUMS)]
+
+    def _track_items(self, album_index):
+        title, artist, _n = ALBUMS[album_index % len(ALBUMS)]
+        return [(f"demo:play-{album_index}-{i}", track, artist, "action")
+                for i, (track, _a, _al, _len) in enumerate(TRACKS)]
+
+    def _node(self, item_key):
+        """(title, items) for a position in the invented tree."""
+        if item_key in DEMO_TREE:
+            return DEMO_TREE[item_key]
+        if item_key == "demo:albums":
+            return "Albums", self._album_items()
+        if item_key == "demo:artists":
+            return "Artists", self._artist_items()
+        if item_key and item_key.startswith("demo:album-"):
+            index = int(item_key.rsplit("-", 1)[1])
+            return ALBUMS[index % len(ALBUMS)][0], self._track_items(index)
+        if item_key and item_key.startswith("demo:artist-"):
+            index = int(item_key.rsplit("-", 1)[1])
+            title, artist, _n = ALBUMS[index % len(ALBUMS)]
+            return artist, [(f"demo:album-{index}", title, artist, "list")]
+        return DEMO_TREE["root"]
+
     def browse(self, hierarchy="browse", **opts):
-        return _Reply(body={"list": {"title": "Explore", "count": 0}})
+        key = opts.get("multi_session_key") or "default"
+        item_key = opts.get("item_key")
+
+        if hierarchy == "search":
+            typed = opts.get("input")
+            if typed is None:
+                # The Core answers a search hierarchy with a prompt item, and
+                # you browse it again carrying what was typed.
+                self._cursors[key] = "demo:search-prompt"
+                return _Reply(body={"action": "list",
+                                    "list": {"title": "Search", "count": 1,
+                                             "level": 0}})
+            self._cursors[key] = f"demo:search:{typed}"
+            return _Reply(body={"action": "list",
+                                "list": {"title": f"Results for {typed}",
+                                         "count": len(self._search(typed)),
+                                         "level": 1}})
+
+        if hierarchy in ("albums", "artists") and not item_key:
+            item_key = f"demo:{hierarchy}"
+        if opts.get("pop_all") and not item_key:
+            item_key = "root"
+        if item_key and item_key.startswith("demo:play-"):
+            # An action item plays; there is no list to read afterwards.
+            self._track = next(self._tracks)
+            self._position = 0.0
+            self._state = "playing"
+            self._push()
+            return _Reply(body={"action": "message", "message": "Playing",
+                                "is_error": False})
+
+        position = item_key or self._cursors.get(key) or "root"
+        self._cursors[key] = position
+        title, items = self._node(position)
+        return _Reply(body={"action": "list",
+                            "list": {"title": title, "count": len(items),
+                                     "level": 0 if position == "root" else 1,
+                                     "subtitle": None, "image_key": None}})
+
+    def _search(self, typed):
+        needle = str(typed).lower()
+        hits = [(k, t, s, h) for (k, t, s, h) in
+                self._album_items() + self._artist_items()
+                if needle in t.lower() or (s and needle in s.lower())]
+        return hits
 
     def load(self, hierarchy="browse", offset=0, count=100, **opts):
-        return _Reply(body={"items": [], "offset": 0,
-                            "list": {"title": "Explore", "count": 0}})
+        key = opts.get("multi_session_key") or "default"
+        position = self._cursors.get(key) or "root"
+
+        if position == "demo:search-prompt":
+            items = [("demo:search-input", "Search", "Type to search", "action")]
+            title = "Search"
+        elif position.startswith("demo:search:"):
+            items = self._search(position[len("demo:search:"):])
+            title = "Results"
+        else:
+            title, items = self._node(position)
+
+        window = items[offset:offset + count]
+        return _Reply(body={
+            "offset": offset,
+            "list": {"title": title, "count": len(items), "level": 0,
+                     "subtitle": None, "image_key": None},
+            "items": [{"title": t, "subtitle": s, "item_key": k, "hint": h,
+                       "image_key": DEMO_IMAGE_KEY if h == "list" else None}
+                      for (k, t, s, h) in window],
+        })
 
     def image_url(self, image_key, width=0, height=0, scale="fit"):
         return f"http://127.0.0.1:{self.port}/demo-art/{image_key}"

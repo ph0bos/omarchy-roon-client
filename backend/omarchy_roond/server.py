@@ -5,6 +5,13 @@ control are call-and-response and belong on HTTP, while zone state arrives
 unbidden from the Core and has to be pushed. This is the same shape
 `MopidyRpc.js` consumed in the TIDAL plugin, so the QML side is familiar ground.
 
+The queue is a read of the daemon's own live subscription, not a call to the
+Core, so `/queue` is as cheap as `/zones`.
+
+`/browse` and `/load` are the raw verbs; `/page` is the pair done together under
+a lock, which is what a surface should actually use. See `browse.py` for why
+they cannot be two requests.
+
 Album art is deliberately absent. The Core serves it directly, so `/state`
 publishes `image_base` and QML points `Image` straight at the Core -- no proxy,
 no cache to write, and Qt's own image cache does the work.
@@ -20,7 +27,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from . import wire
+from . import browse, wire
 from .moo import MooError
 
 MAX_BODY = 1 << 20
@@ -86,8 +93,14 @@ def snapshot(session) -> dict:
             "version": core.display_version,
         },
         # QML builds art URLs itself: <image_base>/<key>?scale=fit&width=..&height=..
-        "image_base": None if core is None else
-        f"http://{core.ip}:{core.http_port}/api/image",
+        #
+        # The Core serves its own art, so this normally points straight at it.
+        # A session can override it -- `--demo` serves an invented sleeve from
+        # the daemon itself, and a surface that built Core URLs from a demo
+        # Core's address would ask a machine that is not there.
+        "image_base": getattr(session, "image_base", None) or (
+            None if core is None else
+            f"http://{core.ip}:{core.http_port}/api/image"),
         # Which zone stands for "this machine" -- what MPRIS, the media keys and
         # the bar widget all follow.
         "pinned_zone_id": session.pinned_zone_id,
@@ -97,6 +110,19 @@ def snapshot(session) -> dict:
                           if hasattr(session, "output_format") else None),
         "zones": [session.zones.summary(z["zone_id"]) for z in session.zones.all()],
     }
+
+
+def queue_snapshot(session) -> dict:
+    """The pinned zone's queue, as `/queue` serves it and `/ws` pushes it.
+
+    One zone's queue at a time, because that is all the daemon subscribes to.
+    A surface that wants another room's queue pins that room -- the alternative
+    is holding a copy of every queue in the house to render one of them.
+    """
+    queue = getattr(session, "queue", None)
+    if queue is None:
+        return {"zone_id": None, "items": []}
+    return queue.summary()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -156,6 +182,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(snapshot(self.session))
         if path == "/zones":
             return self._json({"zones": snapshot(self.session)["zones"]})
+        if path == "/setup":
+            # The five rungs between a fresh install and sound, so the first-run
+            # surface never has to send anyone to a terminal. Read-only, and
+            # cheap enough to poll while the wizard is on screen.
+            from . import setup
+            return self._json(setup.summary(self.session))
+        if path == "/queue":
+            # Served from the live subscription, so this is a read of memory
+            # rather than a round trip to the Core.
+            return self._json(queue_snapshot(self.session))
         if path.startswith("/demo-art/"):
             from .demo import demo_cover_bytes
             data = demo_cover_bytes()
@@ -237,6 +273,31 @@ class Handler(BaseHTTPRequestHandler):
                 if not settings:
                     return self._error(400, "no settings given")
                 reply = self.session.change_settings(zone_id, **settings)
+            elif path == "/play_from_here":
+                # The zone defaults to the pinned one because the queue does:
+                # /queue only ever holds the pinned zone's list.
+                zone_id = body.get("zone_id") or self.session.pinned_zone_id
+                if not zone_id:
+                    return self._error(400, "missing: zone_id")
+                (queue_item_id,) = self._require(body, "queue_item_id")
+                reply = self.session.play_from_here(zone_id, queue_item_id)
+            elif path == "/page":
+                # browse + load as one move, because they are one move: the
+                # Core holds a cursor per session key and the pair must not be
+                # interleaved with anyone else's. See browse.py.
+                (session_key,) = self._require(body, "session_key")
+                result = browse.page(
+                    self.session, self.server.browse_keys, str(session_key),
+                    hierarchy=str(body.get("hierarchy", "browse")),
+                    item_key=body.get("item_key"),
+                    input=body.get("input"),
+                    offset=int(body.get("offset", 0)),
+                    count=int(body.get("count", browse.DEFAULT_COUNT)),
+                    pop_all=bool(body.get("pop_all")),
+                    pop_levels=body.get("pop_levels"),
+                    zone_id=body.get("zone_id") or self.session.pinned_zone_id,
+                    refresh_list=bool(body.get("refresh_list")))
+                return self._json(result)
             elif path == "/browse":
                 opts = {k: v for k, v in body.items() if k != "hierarchy"}
                 reply = self.session.browse(body.get("hierarchy", "browse"), **opts)
@@ -312,6 +373,10 @@ class ApiServer(ThreadingHTTPServer):
         super().__init__((host, port), Handler)
         self.session = session
         self.hub = Hub()
+        # One lock per browse cursor, held for the browse+load pair. Lives on
+        # the server rather than in the session because it is about concurrent
+        # HTTP callers, which is this side's problem.
+        self.browse_keys = browse.SessionKeys()
         self.notifier = None
         self.verbose = verbose
         self._wire_session()
@@ -341,6 +406,16 @@ class ApiServer(ThreadingHTTPServer):
             {"type": "disconnected", "reason": why})
         session.on_awaiting_approval = lambda why: self.hub.broadcast(
             {"type": "awaiting_approval", "reason": why})
+
+        def on_queue(_zone_id):
+            # Same bargain as zones: with nobody listening, building the payload
+            # is pure waste. Unlike zones this fires per queue edit rather than
+            # once a second, but the payload is ~100 items rather than one zone.
+            if self.hub.count() == 0:
+                return
+            self.hub.broadcast({"type": "queue", **queue_snapshot(session)})
+
+        session.on_queue = on_queue
 
     @property
     def url(self) -> str:

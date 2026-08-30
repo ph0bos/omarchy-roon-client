@@ -99,9 +99,9 @@ def serve(args) -> int:
     # steal them, so log through the hub's events rather than reassigning.
     threading.Thread(target=session.run_forever, daemon=True).start()
     print(f"{BOLD}omarchy-roond{RESET} listening on {GREEN}{api.url}{RESET}")
-    print(f"  {DIM}GET  /health /state /zones /zones/<id>{RESET}")
-    print(f"  {DIM}POST /control /seek /volume /settings /browse /load{RESET}")
-    print(f"  {DIM}POST /pin /notifications{RESET}")
+    print(f"  {DIM}GET  /health /state /zones /zones/<id> /queue /setup{RESET}")
+    print(f"  {DIM}POST /control /seek /volume /settings /page /browse /load{RESET}")
+    print(f"  {DIM}POST /pin /notifications /play_from_here{RESET}")
     print(f"  {DIM}WS   /ws{RESET}")
     if notify_ok:
         state = "on" if session.notifications else "off"
