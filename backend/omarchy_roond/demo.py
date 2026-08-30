@@ -360,6 +360,25 @@ class DemoSession:
                       for (k, t, s, h) in window],
         })
 
+    def setup_summary(self):
+        """There is nothing to set up: the Core is invented and so is the zone.
+
+        Computing the real ladder here would ask systemd about a bridge this
+        session does not use, and open the first-run wizard over a demo that is
+        working perfectly.
+        """
+        from . import setup
+        titles = ["Roon Core found", "Paired with the Core", "Approved in Roon",
+                  "RoonBridge running", "This machine visible as a zone"]
+        keys = ["core", "paired", "approved", "bridge", "zone"]
+        return {
+            "ready": True,
+            "blocked_on": None,
+            "rungs": [{"key": k, "title": t, "state": setup.OK,
+                       "detail": "demo", "fix": ""}
+                      for k, t in zip(keys, titles, strict=True)],
+        }
+
     def image_url(self, image_key, width=0, height=0, scale="fit"):
         return f"http://127.0.0.1:{self.port}/demo-art/{image_key}"
 

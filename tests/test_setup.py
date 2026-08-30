@@ -163,6 +163,18 @@ def test_summary_is_ready_only_when_every_rung_is_done():
     assert len(result["rungs"]) == 5
 
 
+def test_a_session_may_answer_the_ladder_itself():
+    """`--demo` does: there is no Core to pair with and no bridge of its own,
+    and a wizard opening over a working demo is a wizard crying wolf."""
+    class Own:
+        def setup_summary(self):
+            return {"ready": True, "blocked_on": None, "rungs": []}
+
+    assert setup.summary(Own(), bridge=False) == {"ready": True,
+                                                  "blocked_on": None,
+                                                  "rungs": []}
+
+
 def test_a_missing_systemd_reports_not_running_rather_than_raising(monkeypatch):
     """No user session to ask is not a crash; it is "we cannot see one"."""
     setup._bridge_cache = (0.0, False)

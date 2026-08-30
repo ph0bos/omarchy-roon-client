@@ -665,6 +665,41 @@ the results rather than abandoning the search -- being thrown back to the
 library root from an album you reached by searching loses the search you were
 working in.
 
+### A grid, a page, and three small lies caught by looking
+
+**A list of records is a wall of covers; a list of menu entries is a list.**
+Which one a browse position is gets decided from the data rather than from the
+list's title -- the titles are the user's library and arrive in every language
+Roon supports. If most rows carry artwork, the artwork is the content and a grid
+shows more of it per screen. Tracks inside an album carry none (they inherit the
+sleeve), so an album's own page stays a list, which is what it should be.
+Action items get no vote: "Play Album" says nothing about the shape of the page
+it sits at the top of.
+
+**The page's artwork is on the list, not the rows.** An album page's
+`list.image_key` is the sleeve and an artist page's is their photograph, so a
+banner of art, title, subtitle and count is the whole difference between "a
+position in a tree" and "a page". It costs nothing -- the Core is already
+serving the image.
+
+**An action is a verb, not a record.** Drawn as an art card, "Play Artist" is a
+big empty tile that reads as artwork that failed to load. It gets the shape of a
+button instead: same cell, same grid, obviously not a sleeve.
+
+Three things this session got wrong and only screenshots caught:
+
+* Every repeat of a track in the queue claimed to be playing. Matching display
+  strings is the only way to guess which row is current -- there is no track id
+  -- but marking *every* match says one track is playing in four places. Only
+  the first match is marked now; Roon's queue starts at what is playing.
+* `--demo` opened the first-run wizard over a working demo, because the ladder
+  asked systemd about a bridge the demo does not use. A session can now answer
+  the ladder itself, and the demo does. The wizard is the one surface that must
+  never cry wolf.
+* The banner said "5 Albums" and "6 items" in the same breath. Roon's own
+  subtitle is usually the count already, so ours only speaks when nothing else
+  has.
+
 ### Proven end to end against a live Core
 
 Discovery through all three tiers; register; silent reconnect with a stored token;

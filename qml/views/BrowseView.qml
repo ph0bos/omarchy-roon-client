@@ -62,6 +62,33 @@ Item {
   readonly property bool peopleHere:
     listInfo && String(listInfo.title || "").toLowerCase().indexOf("artist") === 0
 
+  // A list of records is a wall of covers; a list of menu entries is a list.
+  //
+  // Decided from the data rather than from the list's title, because the titles
+  // are the user's library and come in every language Roon supports: if most
+  // rows carry artwork, the artwork is the content and a grid shows more of it
+  // per screen. Tracks inside an album carry none -- they inherit the sleeve --
+  // so an album's own page stays a list, which is what it should be.
+  readonly property bool artShaped: {
+    var withArt = 0
+    var records = 0
+    for (var i = 0; i < root.items.length; i++) {
+      var it = root.items[i]
+      var hint = String(it.hint || "list")
+      // The "Play Album" at the top of a page says nothing about whether the
+      // page is a wall of covers, so it does not get a vote.
+      if (hint === "action" || hint === "action_list" || hint === "header") continue
+      records++
+      if (it.image_key) withArt++
+    }
+    if (records < 5) return false
+    return withArt / records > 0.7
+  }
+
+  // Columns, and therefore what up and down mean.
+  readonly property int columns: Math.max(1,
+    Design.fitCards(grid.width, Style.space(14), Style.space(Design.cardIdeal)))
+
   signal actionMessage(string text, bool isError)
 
   Component.onCompleted: root.openRoot()
@@ -206,14 +233,24 @@ Item {
     if (root.items.length === 0) return
     var next = root.selected + delta
     root.selected = Math.max(0, Math.min(root.items.length - 1, next))
-    list.positionViewAtIndex(root.selected, ListView.Contain)
+    if (root.artShaped) grid.positionViewAtIndex(root.selected, GridView.Contain)
+    else list.positionViewAtIndex(root.selected, ListView.Contain)
   }
 
   // Keys the list wants; everything else bubbles to the overlay, which is what
   // keeps Escape and the transport working from in here.
   Keys.onPressed: function(event) {
-    if (event.key === Qt.Key_Down) { root.move(1); event.accepted = true }
-    else if (event.key === Qt.Key_Up) { root.move(-1); event.accepted = true }
+    // In a grid, down is a row rather than an item, and left and right are
+    // navigation rather than transport. The media keys still work globally, so
+    // shadowing the arrows here costs nothing and matches what the eye expects.
+    var step = root.artShaped ? root.columns : 1
+    if (event.key === Qt.Key_Down) { root.move(step); event.accepted = true }
+    else if (event.key === Qt.Key_Up) { root.move(-step); event.accepted = true }
+    else if (root.artShaped && event.key === Qt.Key_Right) {
+      root.move(1); event.accepted = true
+    } else if (root.artShaped && event.key === Qt.Key_Left) {
+      root.move(-1); event.accepted = true
+    }
     else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
       root.activateSelected(); event.accepted = true
     } else if (event.key === Qt.Key_Backspace) {
@@ -344,17 +381,91 @@ Item {
     }
   }
 
+  // ---- the page's own artwork ----
+  //
+  // Roon puts the cover on the LIST object, not on the rows: an album page's
+  // `list.image_key` is the sleeve, an artist page's is their photograph. It is
+  // the one thing that makes a position in a tree read as a page, and it costs
+  // nothing to show -- the Core is already serving the image.
+  Item {
+    id: banner
+    anchors.top: header.bottom
+    anchors.topMargin: Style.space(6)
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.leftMargin: Style.space(12)
+    anchors.rightMargin: Style.space(12)
+    height: visible ? Style.space(104) : 0
+    visible: root.listInfo && root.listInfo.image_key
+
+    RoundedImage {
+      id: bannerArt
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      width: Style.space(88)
+      height: width
+      radius: root.peopleHere ? width / 2 : Style.space(5)
+      decodeSize: 256
+      source: root.svc && root.listInfo && root.listInfo.image_key
+              ? root.svc.artForKey(root.listInfo.image_key, 256) : ""
+    }
+
+    Column {
+      anchors.left: bannerArt.right
+      anchors.leftMargin: Style.space(16)
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Style.space(3)
+
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        text: root.listInfo ? String(root.listInfo.title || "") : ""
+        elide: Text.ElideRight
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.title
+        font.weight: Font.DemiBold
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        visible: text !== ""
+        text: root.listInfo ? String(root.listInfo.subtitle || "") : ""
+        elide: Text.ElideRight
+        color: root.foreground
+        opacity: 0.75
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        // Roon's own subtitle is usually the count already ("5 Albums"), so
+        // this only speaks when nothing else has.
+        visible: !root.listInfo || !root.listInfo.subtitle
+        text: root.total === 1 ? "1 item" : root.total + " items"
+        color: Color.muted
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+    }
+  }
+
   // ---- the list ----
   ListView {
     id: list
-    anchors.top: header.bottom
+    anchors.top: banner.visible ? banner.bottom : header.bottom
     anchors.topMargin: Style.space(4)
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.bottom: parent.bottom
     clip: true
     boundsBehavior: Flickable.StopAtBounds
-    model: root.items
+    model: root.artShaped ? [] : root.items
+    visible: !root.artShaped
     cacheBuffer: Style.space(400)
     currentIndex: root.selected
     // What is on screen during a move is the OLD page. Dimming it says so,
@@ -377,6 +488,54 @@ Item {
       circular: root.peopleHere
       artUrl: root.svc && modelData.image_key
               ? root.svc.artForKey(modelData.image_key, 80) : ""
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onActivated: {
+        root.selected = index
+        root.open(modelData)
+      }
+    }
+  }
+
+  GridView {
+    id: grid
+    anchors.fill: list
+    anchors.leftMargin: Style.space(8)
+    anchors.rightMargin: Style.space(8)
+    clip: true
+    visible: root.artShaped
+    boundsBehavior: Flickable.StopAtBounds
+    model: root.artShaped ? root.items : []
+    currentIndex: root.selected
+    opacity: root.loading ? 0.4 : 1.0
+    Behavior on opacity { NumberAnimation { duration: Design.fast } }
+
+    // A GridView's cell carries its own gutter, so a row of n cells is n cards
+    // and n gaps -- one more gap than a row of cards has. Sizing the cell with
+    // the shelf sum is what silently costs a column and leaves a column's worth
+    // of space down the right.
+    readonly property int gutter: Style.space(14)
+    readonly property int cardWidth:
+      Design.gridCardWidth(grid.width, grid.gutter, root.columns)
+
+    cellWidth: cardWidth + gutter
+    cellHeight: cardWidth + Style.space(46)
+    cacheBuffer: Style.space(800)
+
+    onContentYChanged: {
+      if (contentY + height > contentHeight - Style.space(600)) root.loadMore()
+    }
+
+    delegate: ArtCard {
+      required property var modelData
+      required property int index
+
+      width: grid.cardWidth
+      item: modelData
+      selected: index === root.selected
+      circular: root.peopleHere
+      artUrl: root.svc && modelData.image_key
+              ? root.svc.artForKey(modelData.image_key, 320) : ""
       foreground: root.foreground
       fontFamily: root.fontFamily
       onActivated: {

@@ -162,10 +162,10 @@ Room names are a floor plan; a library is a listening history.
 1. ~~Settle app vs overlay.~~ Overlay.
 2. ~~Add the queue to the daemon.~~ Done.
 3. ~~Port `Overlay.qml` and the component library across.~~ **Done.** The
-   overlay ships with two views -- now playing and the queue -- on the ported
-   chrome, transport strip and component library. See *The overlay, as built*
-   in `CONTEXT.md`. **Owed:** screenshots for the README, which must be taken
-   under `--demo` and therefore need the real daemon stopped for a minute.
+   overlay ships with four views -- now playing, the library, the queue and
+   first-run -- on the ported chrome, transport strip and component library.
+   See *The overlay, as built* in `CONTEXT.md`. README screenshots are taken,
+   under `--demo` on `osaka-jade`, as the working notes describe.
 4. ~~Build the first-run wizard.~~ **Done**, along with the quick menu (`M`:
    modes, Roon Radio, notifications, rooms) and the keyboard map (`?`).
 5. ~~Browse navigation, with one `multi_session_key` per surface.~~ **Done** —
@@ -173,13 +173,14 @@ Room names are a floor plan; a library is a listening history.
    key. Surfaces must never call `/browse` and `/load` themselves.
 6. ~~Search on its own session key, debounced.~~ **Done**, 350ms, in the
    library view's own field.
-7. ~~Artist and album views~~ **They are the browse tree** — searching and
-   pushing into a result lands on the artist page, because that is all an
-   artist page is. What is left is presentation: a grid instead of a list, and
-   the album/artist header art that `ArtCard`, `Shelf` and `LibraryGrid` were
-   written for.
+7. ~~Artist and album views~~ **Done.** They are the browse tree — searching
+   and pushing into a result lands on the artist page, because that is all an
+   artist page is. A wall of covers now draws as a grid (`ArtCard`), a track
+   list stays a list, and both album and artist pages wear the artwork Roon
+   puts on the list object.
 
-The component library still to port for 5–7 is `ArtCard`, `Shelf`,
-`LibraryGrid`, `ScrollHint`, `TiltFrame` and the three views built on them
-(`HomeView`, `DetailView`, `PlayerView`) — about 2,000 lines, deliberately left
-until there is something to render in them.
+`ArtCard` is ported. What is still unported from `omarchy-tidal` is `Shelf`,
+`LibraryGrid`, `ScrollHint`, `TiltFrame` and `HomeView` — the furniture for a
+*landing page* of library roots, recently played and a Roon Radio toggle, which
+is the obvious next surface and the one thing the browse tree cannot give you
+for free.

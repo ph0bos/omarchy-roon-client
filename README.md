@@ -22,9 +22,9 @@ This takes the other path. A small daemon holds the connection to your Core and
 publishes it to the desktop; the bar shows what is playing and lets you drive it.
 There is no window, no Electron, and no browser engine.
 
-**The endpoint, the bar, and a summoned player with the queue.** Browse, search
-and artist pages are still to come — you pick the music from your phone, and this
-machine plays it, shows it, and lets you drive it from here.
+**The endpoint, the bar, and a summoned player.** Now playing, your library,
+search and the queue — driven from this machine or from the Roon app on your
+phone, whichever is nearer.
 
 ## Requirements
 
@@ -125,42 +125,47 @@ full window.
 A summoned window, over whatever you are working in, on the screen you are
 looking at. Escape closes it; it remembers where you were.
 
-Two faces:
-
 **Now playing** — the sleeve, the track, the room, and a live spectrum analyser
 reading the same PipeWire signal that reaches your DAC. The page is washed in
 the record's own colour, and the format leaving this machine is on the foot of
 it.
 
+![Now playing](docs/screenshots/overlay-nowplaying.png)
+
+**The library** — `L`, or the book in the header. Browse your Roon library, or
+search it: results come back as Roon's own — a top hit, then artists, albums,
+composers, tracks and works. `Enter` opens a row, `Backspace` goes back, and a
+wall of covers is drawn as a grid while a track list stays a list.
+
+An artist page is what you get by opening an artist, because in Roon that is
+literally what an artist page is: a position in a server-driven tree, not an
+object with an address.
+
+![The library](docs/screenshots/overlay-library.png)
+
 **The queue** — what is coming next in the pinned room, with the count and the
 time left. Click any row to play from there; everything after it stays. Roon's
 own `play_from_here`, so it behaves exactly as it does on your phone.
 
-The transport strip is shared by both, because the controls should not disappear
-because you switched to the queue.
+![The queue](docs/screenshots/overlay-queue.png)
+
+The transport strip is shared by all three, because the controls should not
+disappear because you switched to the queue.
+
+`M` opens the menu — shuffle, repeat, Roon Radio, track notifications, and the
+rooms. Those first three are properties of the **zone**, so changing one changes
+it for the room and for whoever is looking at their phone. Switching rooms here
+switches everything: the bar, the media keys and the queue all follow the same
+pinned zone. `?` shows the keyboard map.
 
 ```bash
 omarchy-shell roon overlay          # now playing
-omarchy-shell roon queue            # straight to the queue
 omarchy-shell roon library          # straight to the library
+omarchy-shell roon queue            # straight to the queue
 ```
 
-Inside: `Space` play/pause, `←`/`→` previous and next, `N` now playing, `Q`
-queue, `L` library, `/` search, `M` menu, `?` keys, `Escape` to close.
-
-**The library** — `L` or the book in the header. Browse your Roon library, or
-search it: results come back as Roon's own — a top hit, then artists, albums,
-composers, tracks and works. Enter opens a row, Backspace goes back, and an
-artist page is what you get by opening an artist, because in Roon that is
-literally what an artist page is: a position in a server-driven tree, not an
-object with an address.
-
-`M` opens the menu — shuffle, repeat, Roon Radio, track notifications, and the
-rooms. Switching rooms here switches everything: the bar, the media keys and the
-queue all follow the same pinned zone. `?` shows the keyboard map.
-
-Browse, search, and artist and album pages are not here yet — see
-[Known constraints](#known-constraints).
+Inside: `Space` play/pause, `←`/`→` previous and next, `N` now playing, `L`
+library, `Q` queue, `/` search, `M` menu, `?` keys, `Escape` to close.
 
 ### First run
 

@@ -150,6 +150,14 @@ def rungs(session, bridge=None) -> list[dict]:
 
 def summary(session, bridge=None) -> dict:
     """What `/setup` serves: the ladder, and the rung to point at."""
+    # A session may answer for itself. `--demo` does: it has no Core to pair
+    # with and no bridge of its own, so computing the ladder from a real
+    # machine's systemd would open the wizard over a demo that is working
+    # perfectly -- and the wizard is the one surface that must never cry wolf.
+    own = getattr(session, "setup_summary", None)
+    if callable(own):
+        return own()
+
     ladder = rungs(session, bridge=bridge)
     unfinished = [r for r in ladder if r["state"] != OK]
 

@@ -26,11 +26,18 @@ Item {
   // key -- no track id -- so there is nothing to compare a queue item's
   // `queue_item_id` against. Matching the strings is the best available answer;
   // when it is wrong a row is simply un-marked, and nothing else changes.
-  function isPlaying(item) {
-    if (!root.svc || !item) return false
-    if (!root.svc.hasTrack) return false
-    return String(item.title || "") === root.svc.title
-        && String(item.artist || "") === root.svc.artist
+  //
+  // Only the FIRST match is marked. A queue repeats -- a playlist that comes
+  // round again, an album played twice -- and marking every row that matches
+  // says the same track is playing in four places at once. Roon's queue starts
+  // at what is playing, so the first match is the one.
+  readonly property int playingIndex: {
+    if (!svc || !svc.hasTrack) return -1
+    for (var i = 0; i < items.length; i++) {
+      if (String(items[i].title || "") === svc.title
+          && String(items[i].artist || "") === svc.artist) return i
+    }
+    return -1
   }
 
   Item {
@@ -93,7 +100,7 @@ Item {
       item: modelData
       rowIndex: index
       artUrl: root.svc ? root.svc.artForKey(modelData.image_key, 80) : ""
-      playing: root.isPlaying(modelData)
+      playing: index === root.playingIndex
       foreground: root.foreground
       fontFamily: root.fontFamily
       accent: root.svc && root.svc.hasArtAccent ? root.svc.artAccent : Color.accent
