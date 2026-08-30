@@ -211,7 +211,8 @@ def targeted_discover(timeout: float = 2.0) -> list[Core]:
         if not hosts:
             continue
         with ThreadPoolExecutor(max_workers=128) as pool:
-            candidates += [h for h, ok in zip(hosts, pool.map(_has_core_ports, hosts)) if ok]
+            probed = zip(hosts, pool.map(_has_core_ports, hosts), strict=True)
+            candidates += [host for host, open_port in probed if open_port]
 
     if not candidates:
         return []

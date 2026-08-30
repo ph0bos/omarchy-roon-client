@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import itertools
 import threading
-import time
 from pathlib import Path
 
 DEMO_IMAGE_KEY = "demo-cover"

@@ -94,9 +94,13 @@ class Moo:
         opcode = self._buf[0] & 0x0F
         ln, off = self._buf[1] & 0x7F, 2
         if ln == 126:
-            self._need(4); ln = struct.unpack(">H", self._buf[2:4])[0]; off = 4
+            self._need(4)
+            ln = struct.unpack(">H", self._buf[2:4])[0]
+            off = 4
         elif ln == 127:
-            self._need(10); ln = struct.unpack(">Q", self._buf[2:10])[0]; off = 10
+            self._need(10)
+            ln = struct.unpack(">Q", self._buf[2:10])[0]
+            off = 10
         self._need(off + ln)
         payload = self._buf[off:off + ln]
         self._buf = self._buf[off + ln:]

@@ -7,6 +7,9 @@ tests pin the parsing against real log lines.
 """
 from __future__ import annotations
 
+import os
+import time
+
 import pytest
 from _fixtures import ROOT  # noqa: F401
 
@@ -61,7 +64,6 @@ def test_reparses_only_when_the_log_changes(tmp_path):
     assert fmt.read() is first          # same object: no re-parse
     path = tmp_path / "RAATServer_log.txt"
     path.write_text(LOG.replace("96000/24/2", "192000/24/2"))
-    import os, time
     os.utime(path, (time.time() + 1, time.time() + 1))
     assert fmt.read()["label"] == "PCM 24/192"
 

@@ -6,7 +6,7 @@ plain Python over the same zone summaries the API serves.
 from __future__ import annotations
 
 import pytest
-from _fixtures import a_zone, load, zones_body
+from _fixtures import zones_body
 
 from omarchy_roond.mpris import LOOP_FROM_MPRIS, LOOP_TO_MPRIS, MprisPlayer
 from omarchy_roond.zones import ZoneStore

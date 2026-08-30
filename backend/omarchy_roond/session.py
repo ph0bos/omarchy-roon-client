@@ -27,12 +27,10 @@ import json
 import os
 import socket
 import threading
-import time
-from pathlib import Path
-from typing import Callable
-
 import urllib.error
 import urllib.request
+from pathlib import Path
+from typing import Callable
 
 from . import discovery, palette
 from .endpoint import OutputFormat
