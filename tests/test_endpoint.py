@@ -14,11 +14,12 @@ from omarchy_roond.endpoint import OutputFormat, describe, is_hi_res
 
 # Lines copied verbatim from a live RAATServer log.
 LOG = """\
-08/30 16:57:11 Trace: [RAAT::HD-Audio Generic ALC1220 Digital] [lua] GOT [186] \
-{"request":"setup","format":{"sample_type":"pcm","sample_rate":96000,"bits_per_sample":24}}
-08/30 16:57:11 Trace: [RAAT::HD-Audio Generic ALC1220 Digital] alsa output setup: format is pcm 96000/24/2
-08/30 16:57:11 Trace: [RAAT::HD-Audio Generic ALC1220 Digital] [ALSA] [plug:pipewire] using hw pcmformat S32_LE bitspersample 32
-08/30 16:57:11 Trace: [RAAT::HD-Audio Generic ALC1220 Digital] [output/alsa] [plug:pipewire] device is ready
+08/30 16:57:11 Trace: [RAAT::Output] [lua] GOT [186] {"request":"setup",\
+"format":{"sample_type":"pcm","sample_rate":96000,"bits_per_sample":24}}
+08/30 16:57:11 Trace: [RAAT::Output] alsa output setup: format is pcm 96000/24/2
+08/30 16:57:11 Trace: [RAAT::Output] [ALSA] [plug:pipewire] using hw \
+pcmformat S32_LE bitspersample 32
+08/30 16:57:11 Trace: [RAAT::Output] [output/alsa] [plug:pipewire] device is ready
 """
 
 

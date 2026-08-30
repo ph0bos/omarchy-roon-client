@@ -36,7 +36,8 @@ def render(session: RoonSession) -> None:
         track = s["track"]
         pos = f"{clock(track['seek_position'])}/{clock(track['length'])}" if track["length"] else ""
         line = f"{track['title']} · {track['artist']}" if track["title"] else "—"
-        print(f"  {colour}{state:<8}{RESET} {BOLD}{s['name']:<28}{RESET} {line[:52]:<52} {DIM}{pos}{RESET}")
+        print(f"  {colour}{state:<8}{RESET} {BOLD}{s['name']:<28}{RESET} "
+              f"{line[:52]:<52} {DIM}{pos}{RESET}")
         for out in s["outputs"]:
             if out["standby"]:
                 vol = f"{DIM}standby{RESET}"
@@ -202,7 +203,8 @@ def main() -> int:
             reply = session.control(zone["zone_id"], action)
             time.sleep(1.5)
             after = session.zones.summary(zone["zone_id"])["state"]
-            ok = GREEN + "state changed" + RESET if before != after else YELLOW + "state unchanged" + RESET
+            ok = (GREEN + "state changed" + RESET if before != after
+                  else YELLOW + "state unchanged" + RESET)
             print(f"  {reply}  {before} -> {after}  {ok}")
 
     print(f"\n{BOLD}streaming{RESET} for {args.seconds:g}s "

@@ -190,9 +190,12 @@ install_endpoint() {
     # so install it ourselves through run_priv, which falls back to pkexec and
     # its graphical prompt.
     if ! have_pkg roonbridge; then
-      local built
-      built=$(ls -t "${XDG_CACHE_HOME:-$HOME/.cache}"/{yay,paru}/roonbridge/roonbridge-*.pkg.tar.* 2>/dev/null \
-              | grep -v -- '-debug-' | head -1)
+      local built="" candidate
+      for candidate in "${XDG_CACHE_HOME:-$HOME/.cache}"/{yay,paru}/roonbridge/roonbridge-*.pkg.tar.*; do
+        [[ -f "$candidate" ]] || continue
+        [[ "$candidate" == *-debug-* ]] && continue
+        [[ -z "$built" || "$candidate" -nt "$built" ]] && built="$candidate"
+      done
       if [[ -n "$built" ]]; then
         warn "the AUR helper could not escalate; installing the package it built"
         dim  "  $built"
@@ -279,7 +282,6 @@ pipewire_route() {
 
   local changed=0
   for f in "${files[@]}"; do
-    local before; before=$(cat "$f")
     if grep -q '"plug:pipewire"' "$f"; then
       dim "already routed: $(basename "$f")"
       continue
@@ -354,8 +356,8 @@ UNITEOF
   # Python startup plus bus registration takes a moment, and a doctor run that
   # beats it reports "MPRIS not on the session bus" -- a red line telling the
   # user to fix something that is merely still starting.
-  local i
-  for i in $(seq 1 15); do
+  local _attempt
+  for _attempt in $(seq 1 15); do
     busctl --user list 2>/dev/null | grep -q omarchy_roon && break
     sleep 0.5
   done
