@@ -12,7 +12,6 @@ import time
 
 import pytest
 from _fixtures import ROOT  # noqa: F401
-
 from omarchy_roond.endpoint import OutputFormat, describe, is_hi_res
 
 # Lines copied verbatim from a live RAATServer log.

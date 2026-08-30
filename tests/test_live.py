@@ -14,7 +14,6 @@ import time
 
 import pytest
 from _fixtures import ROOT  # noqa: F401
-
 from omarchy_roond import discovery
 from omarchy_roond.session import RoonSession
 

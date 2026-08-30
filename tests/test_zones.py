@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 
 from _fixtures import a_zone, zones_body
-
 from omarchy_roond.zones import ZoneStore
 
 

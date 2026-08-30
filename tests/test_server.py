@@ -17,8 +17,6 @@ from http.client import HTTPConnection
 
 import pytest
 from _fixtures import zones_body
-
-from omarchy_roond import wire
 from omarchy_roond.moo import MooError
 from omarchy_roond.server import ApiServer
 from omarchy_roond.zones import ZoneStore

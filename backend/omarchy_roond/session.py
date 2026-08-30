@@ -37,6 +37,7 @@ from .endpoint import OutputFormat
 from .moo import Moo, MooError
 from .zones import ZoneStore
 
+
 class AwaitingApproval(MooError):
     """The Core has not been told to trust this extension yet.
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import pytest
 from _fixtures import zones_body
-
 from omarchy_roond.mpris import LOOP_FROM_MPRIS, LOOP_TO_MPRIS, MprisPlayer
 from omarchy_roond.zones import ZoneStore
 

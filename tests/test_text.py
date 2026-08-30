@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from _fixtures import a_zone, load
-
 from omarchy_roond import text
 
 
