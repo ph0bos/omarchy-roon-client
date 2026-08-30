@@ -24,29 +24,38 @@ R1 deliberately fenced out because you drive playback from your phone.
 
 The daemon already speaks everything needed for this. R2 is mostly interface.
 
-## Decide this first
+**Shipped so far:** the queue end to end (daemon subscription, `/queue`,
+`play_from_here`), the overlay that renders it, a now-playing view with the
+analyser, the quick menu, the keyboard map, the first-run wizard on `/setup`,
+and browse + search on `/page`. What is left is presentation rather than
+protocol: a grid where a list is the wrong shape, and album and artist headers.
 
-**Standalone app, or an Omarchy `overlay` plugin surface?** R1 answered "both,
-with the daemon as the seam", and it does not matter until now. It matters here.
+## Settled: it is an overlay, and the TIDAL UX ports into it
 
-- **Overlay plugin** (what `omarchy-tidal` does): one more `entryPoints.overlay`
-  in `manifest.json`, summoned with a keybinding. Gets `qs.Ui` and `qs.Commons`
-  for free, so every component already written keeps working, and the theme is
-  simply correct.
-- **Standalone app**: its own window, its own process. **Cannot `import qs.Ui`** —
-  no `Color`, no `Style`, no `BorderSurface`, no `PanelSlider`. It needs a theme
-  adapter that reads Omarchy's active theme (`~/.local/state/omarchy/current/`)
-  and republishes those names, plus its own copies of the shell primitives.
+**R2 is an `entryPoints.overlay` surface, not a standalone app.** One more entry
+in `manifest.json`, summoned with a keybinding, with `qs.Ui` and `qs.Commons`
+available — so the theme is simply correct and nothing needs a theme adapter.
 
-The brief said "it's an app, not a plugin". The honest cost of that is the theme
-adapter and a component library; the honest benefit is a window that does not
-live inside the shell process. **Do not start building until this is settled**,
-because it decides whether the existing QML is reusable as-is.
+What settled it: `~/Projects/omarchy-tidal` already holds ~5,400 lines of QML for
+exactly these surfaces (`Overlay.qml`, `HomeView`, `DetailView`, `PlayerView`,
+`NowPlayingView`, `SetupWizard`, and the component library), and every one of
+them imports `qs.Commons` or `qs.Ui`. As an overlay they port with their theming
+intact; as an app each would be a rewrite against a theme adapter first.
+
+The port is a substitution, not a rewrite: `TidalApi.js` → `Roond.js` (R1 has
+it), Mopidy RPC → the local API. The one shape that genuinely differs is the
+data: Tidal returns `{id, title, artist}` objects, Roon returns positions in a
+browse tree. See *R2 is an overlay* in `CONTEXT.md`.
 
 ## Still outstanding from R1
 
-**The first-run setup wizard was chosen and never built.** The five rungs exist
-in `bin/omarchy-roon-endpoint doctor`, but only as a terminal command. The
+~~**The first-run setup wizard was chosen and never built.**~~ **Built.** The
+daemon computes the ladder at `GET /setup` and `qml/components/SetupWizard.qml`
+renders it, polling every 2s while on screen. See *The menu, the keyboard map,
+and the wizard* in `CONTEXT.md` for the three decisions inside it — the one
+worth carrying is that a `blocked` rung outranks an earlier `pending` one,
+because pairing happens during registration and "first unfinished" points at the
+wrong step. The
 decision was: put it in the UI so a new user never opens a terminal.
 
     0. discovery reachable (ufw allows udp/9003, or a host was entered)
@@ -62,12 +71,19 @@ the daemon pushes an `awaiting_approval` event; nothing renders it yet.
 
 ## Gaps in the daemon R2 will hit immediately
 
-- **No queue route.** `RoonSession` has no `subscribe_queue` or `play_from_here`,
-  though both are proven in `spikes/capture-fixtures.py` and a `queue.json`
-  fixture exists. Add `subscribe_queue(zone, max_item_count)` — one subscription
-  per pinned zone at ~100 items, re-subscribed only on zone change.
-- **No browse session management.** `browse()`/`load()` pass `multi_session_key`
-  straight through, so R2 must allocate and track one per surface. See below.
+- ~~No queue route.~~ **Done.** `queue.py` holds the merge, `RoonSession` keeps
+  one subscription following the pinned zone at 100 items, and the API gained
+  `GET /queue`, `POST /play_from_here` and a `queue` WebSocket event. `/queue`
+  reads the daemon's own memory, so it is as cheap as `/zones`, and `--demo`
+  serves a queue too. **The one thing to know:** only the `Subscribed` payload is
+  verified against a live Core — the `changes` operations come from
+  `node-roon-api-transport`, so an operation `QueueStore` does not recognise sets
+  `stale` and the session re-subscribes rather than guessing. If a live Core ever
+  shows a third operation, that is where to add it.
+- ~~No browse session management.~~ **Done.** `browse.py` owns a lock per
+  `multi_session_key` and `POST /page` is the browse+load pair as one move.
+  Two rules survive: every surface passes its OWN key, and paging uses `/load`
+  so it does not move the cursor.
 
 ## Constraints that will bite
 
@@ -86,8 +102,8 @@ Debounce ~350ms.
 
 **Quickshell ships no WebSocket module** and `qt6-websockets` is not installed, so
 QML cannot use the daemon's `/ws`. Reactive playback state comes over MPRIS; HTTP
-is for everything MPRIS cannot express. A standalone app in another toolkit could
-use `/ws` — another point for the app-vs-plugin decision.
+is for everything MPRIS cannot express. As an overlay, that settles it: playback state
+comes over MPRIS, and everything MPRIS cannot express is an HTTP call.
 
 **Art comes from the Core**, not the daemon: `<image_base>/<key>?scale=fit&width=…`.
 `image_base` is in `/state`.
@@ -143,11 +159,27 @@ Room names are a floor plan; a library is a listening history.
 
 ## Suggested order
 
-1. Settle app vs overlay.
-2. Add the queue to the daemon (`subscribe_queue`, `play_from_here`, a `/queue`
-   route) — it is the one API gap.
-3. Build the first-run wizard, since it is owed from R1 and unblocks anyone who
-   is not you.
-4. Browse navigation, with one `multi_session_key` per surface.
-5. Search on its own session key, debounced.
-6. Artist and album views as positions in the browse tree, not as objects.
+1. ~~Settle app vs overlay.~~ Overlay.
+2. ~~Add the queue to the daemon.~~ Done.
+3. ~~Port `Overlay.qml` and the component library across.~~ **Done.** The
+   overlay ships with two views -- now playing and the queue -- on the ported
+   chrome, transport strip and component library. See *The overlay, as built*
+   in `CONTEXT.md`. **Owed:** screenshots for the README, which must be taken
+   under `--demo` and therefore need the real daemon stopped for a minute.
+4. ~~Build the first-run wizard.~~ **Done**, along with the quick menu (`M`:
+   modes, Roon Radio, notifications, rooms) and the keyboard map (`?`).
+5. ~~Browse navigation, with one `multi_session_key` per surface.~~ **Done** —
+   as `POST /page`, which does the browse+load pair under a lock per session
+   key. Surfaces must never call `/browse` and `/load` themselves.
+6. ~~Search on its own session key, debounced.~~ **Done**, 350ms, in the
+   library view's own field.
+7. ~~Artist and album views~~ **They are the browse tree** — searching and
+   pushing into a result lands on the artist page, because that is all an
+   artist page is. What is left is presentation: a grid instead of a list, and
+   the album/artist header art that `ArtCard`, `Shelf` and `LibraryGrid` were
+   written for.
+
+The component library still to port for 5–7 is `ArtCard`, `Shelf`,
+`LibraryGrid`, `ScrollHint`, `TiltFrame` and the three views built on them
+(`HomeView`, `DetailView`, `PlayerView`) — about 2,000 lines, deliberately left
+until there is something to render in them.

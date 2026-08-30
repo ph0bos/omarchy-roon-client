@@ -46,10 +46,19 @@ Item {
   property bool alive: true
 
   Component.onDestruction: {
+    // A surface that is destroyed rather than closed -- a hot reload with the
+    // overlay open -- never gets to un-suppress, and the daemon would go on
+    // swallowing track notifications until something toggled it. The call
+    // carries no callbacks, so nothing reaches back into an object that is on
+    // its way out.
+    if (root.openSurfaces > 0) root.suppressNotifications(false)
     root.alive = false
     stateTimer.running = false
+    queueTimer.running = false
+    setupTimer.running = false
     positionTimer.running = false
     resyncTimer.running = false
+    resyncSoon.running = false
   }
 
   // ---- MPRIS ---------------------------------------------------------------
@@ -141,6 +150,32 @@ Item {
     root.anchorPosition(seconds)
   }
 
+  // Scrubbing moves the local clock on every mouse move and tells Roon once, on
+  // release. A seek per move floods the Core and makes the audio stutter under
+  // the cursor -- so the playhead follows the pointer immediately and the Core
+  // hears about it at the end.
+  function previewSeek(seconds) { root.anchorPosition(seconds) }
+
+  function commitSeek(seconds) {
+    root.anchorPosition(seconds)
+    root.seekTo(seconds)
+    // Re-anchor once the transport has had a moment: a seek Roon clamps or
+    // refuses corrects itself rather than leaving the playhead lying.
+    resyncSoon.restart()
+  }
+
+  Timer {
+    id: resyncSoon
+    interval: 700
+    onTriggered: if (root.alive) root.syncPosition()
+  }
+
+  readonly property bool canSeek: {
+    if (player) return !!player.canSeek
+    var z = root.pinnedZone
+    return z && z.can ? !!z.can.seek : false
+  }
+
   // ---- album art palette ---------------------------------------------------
   //
   // Two problems share one answer: a spectrum analyser drawn in the theme's
@@ -206,9 +241,14 @@ Item {
   // endpoint appears, someone re-pins. Everything second-by-second already
   // arrives over MPRIS, so the closed-panel rate only has to keep the bar's zone
   // name honest -- and that changes about never.
+  // False until the first answer, either way. "Not answered yet" and "answered
+  // and it is down" look identical on a boolean, and a surface that treats them
+  // the same shows a connection error every time the shell restarts.
+  property bool probed: false
+
   Timer {
     id: stateTimer
-    interval: root.panelOpen ? 3000 : 20000
+    interval: (root.panelOpen || root.openSurfaces > 0) ? 3000 : 20000
     running: true
     repeat: true
     triggeredOnStart: true
@@ -219,6 +259,7 @@ Item {
     if (!root.alive) return
     Roond.state(function(s) {
       if (!root.alive || !s) return
+      root.probed = true
       root.daemonUp = true
       root.lastError = ""
       root.imageBase = s.image_base || ""
@@ -234,9 +275,179 @@ Item {
       root.zoneState = z ? z.state : "stopped"
     }, function(err) {
       if (!root.alive) return
+      root.probed = true
       root.daemonUp = false
       root.lastError = err
     })
+  }
+
+  // ---- the queue -----------------------------------------------------------
+  //
+  // The daemon holds one subscription, following the pinned zone, so /queue is
+  // a read of its memory rather than a call to the Core. It is still only
+  // fetched while a surface is showing it: nothing in the bar renders a queue,
+  // and a poll nobody reads is a poll not worth making.
+
+  property var queue: []
+  property string queueZoneId: ""
+
+  // The counters come from the zone, not from the list: the subscription is
+  // capped at 100 items, so counting rows would report the window rather than
+  // the queue.
+  readonly property int queueRemaining:
+    pinnedZone ? (pinnedZone.queue_items_remaining || 0) : 0
+  readonly property real queueTimeRemaining:
+    pinnedZone ? (pinnedZone.queue_time_remaining || 0) : 0
+
+  Timer {
+    id: queueTimer
+    running: root.openSurfaces > 0
+    interval: 5000
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.refreshQueue()
+  }
+
+  function refreshQueue() {
+    if (!root.alive) return
+    Roond.queue(function(q) {
+      if (!root.alive || !q) return
+      root.queue = q.items || []
+      root.queueZoneId = q.zone_id || ""
+    }, function() {
+      if (!root.alive) return
+      root.queue = []
+    })
+  }
+
+  function playFromHere(queueItemId) {
+    if (queueItemId === undefined || queueItemId === null) return
+    Roond.playFromHere(queueItemId, function() {
+      if (!root.alive) return
+      // The queue shortens from the front when you play from the middle, so
+      // ask again rather than waiting out the poll.
+      root.refreshQueue()
+      root.refresh()
+    })
+  }
+
+  function artForKey(key, px) {
+    return Roond.art(root.imageBase, key, px || 96)
+  }
+
+  // ---- first-run setup -------------------------------------------------------
+  //
+  // The daemon computes the ladder; this only holds the answer and asks again
+  // while someone is looking at it. Polled briskly rather than on the slow
+  // state cadence, because the rung people get stuck on -- approval -- is one a
+  // human is acting on RIGHT NOW, on a phone, and the surface should notice
+  // within a second or two of them tapping Enable.
+
+  property var setupRungs: []
+  property bool setupReady: false
+  property string setupBlockedOn: ""
+  // Same trap as `probed`: "not asked yet" must not render as "not set up".
+  property bool setupProbed: false
+
+  Timer {
+    id: setupTimer
+    running: root.openSurfaces > 0 && !root.setupReady
+    interval: 2000
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.refreshSetup()
+  }
+
+  function refreshSetup() {
+    if (!root.alive) return
+    Roond.setup(function(s) {
+      if (!root.alive || !s) return
+      root.setupProbed = true
+      root.setupRungs = s.rungs || []
+      root.setupReady = !!s.ready
+      root.setupBlockedOn = s.blocked_on || ""
+    }, function() {
+      if (!root.alive) return
+      // The daemon not answering is its own state, rendered by the surface as
+      // "the daemon is down" rather than as a half-built ladder.
+      root.setupProbed = true
+      root.setupRungs = []
+      root.setupReady = false
+    })
+  }
+
+  // ---- playback modes --------------------------------------------------------
+  //
+  // Shuffle, repeat and Roon Radio are properties of the ZONE, not of this
+  // client: changing one changes it for the room, and for whoever is looking at
+  // their phone. That is Roon's model rather than a shortcut here, and it is
+  // why these read from the zone's own settings rather than from anything
+  // stored locally.
+
+  readonly property var zoneSettings: pinnedZone ? (pinnedZone.settings || ({})) : ({})
+  readonly property bool shuffle: !!zoneSettings.shuffle
+  readonly property bool autoRadio: !!zoneSettings.auto_radio
+  // "disabled" | "loop" | "loop_one", which is Roon's own vocabulary.
+  readonly property string loopMode: String(zoneSettings.loop || "disabled")
+
+  function applySettings(settings) {
+    if (!root.zoneId) return
+    // Refresh rather than guess: the daemon is on loopback and answers in
+    // milliseconds, so the honest value is back before the menu redraws.
+    Roond.settings(root.zoneId, settings, function() {
+      if (root.alive) root.refresh()
+    })
+  }
+
+  function toggleShuffle() { root.applySettings({ shuffle: !root.shuffle }) }
+  function toggleAutoRadio() { root.applySettings({ auto_radio: !root.autoRadio }) }
+
+  function cycleLoop() {
+    var next = root.loopMode === "disabled" ? "loop"
+             : (root.loopMode === "loop" ? "loop_one" : "disabled")
+    root.applySettings({ loop: next })
+  }
+
+  // ---- surfaces --------------------------------------------------------------
+  //
+  // How many of this plugin's windows are on screen. The state poll speeds up
+  // while any of them is, and the notification card is silenced for a track a
+  // surface is already showing.
+
+  property int openSurfaces: 0
+
+  function surfaceOpened() {
+    root.openSurfaces = root.openSurfaces + 1
+    root.suppressNotifications(true)
+    root.refresh()
+    root.refreshQueue()
+    root.refreshSetup()
+  }
+
+  function surfaceClosed() {
+    root.openSurfaces = Math.max(0, root.openSurfaces - 1)
+    if (root.openSurfaces === 0) root.suppressNotifications(false)
+  }
+
+  // Summon the overlay, optionally straight onto one of its views.
+  function openView(view) {
+    if (!shell) return false
+    return shell.summon(pluginId, JSON.stringify({ view: view || "nowPlaying" })) === true
+  }
+
+  // Messages go to Omarchy's own OSD rather than to a banner of our own: a
+  // browse action that says "Playing" is exactly what that surface is for, and
+  // one notification style across the shell beats two.
+  //
+  // The text carries catalogue strings -- an album name, an error from the Core
+  // -- so the angle brackets come out here, at the boundary, rather than
+  // trusting the other side not to treat them as markup.
+  function osd(message) {
+    if (!shell || !message) return
+    shell.summon("omarchy.osd", JSON.stringify({
+      icon: "media",
+      message: String(message).replace(/[<>]/g, "")
+    }))
   }
 
   // ---- actions -------------------------------------------------------------
@@ -266,6 +477,20 @@ Item {
   // MPRIS has no concept of mute, so this comes from the daemon's zone state and
   // goes back through Roon's own mute call. Driving the fader to zero would look
   // the same for a second and then lose the level you were at.
+
+  readonly property var pinnedZone: {
+    for (var i = 0; i < zones.length; i++) {
+      if (zones[i].zone_id === root.zoneId) return zones[i]
+    }
+    return null
+  }
+
+  // The daemon publishes a format only when the pinned zone IS this machine's
+  // own endpoint, so its presence is the honest test for "this room is here".
+  // Another room is played by hardware we know nothing about -- including
+  // whether its audio ever touches this machine's PipeWire monitor, which is
+  // what the spectrum analyser reads.
+  readonly property bool isLocalZone: outputFormat !== null
 
   readonly property var pinnedOutput: {
     for (var i = 0; i < zones.length; i++) {
@@ -350,6 +575,12 @@ Item {
     function refresh(): string   { root.refresh();   return "ok" }
     function player(): string    { root.toggleRequested(); return "ok" }
     function toggle(): string    { root.toggleRequested(); return "ok" }
+    // The overlay is a separate surface from the bar's mini player: the shell
+    // routes a summon to the plugin's overlay entry point, which the bar
+    // popup's own toggle cannot do.
+    function overlay(): string   { return root.openView("nowPlaying") ? "ok" : "unhandled" }
+    function queue(): string     { return root.openView("queue") ? "ok" : "unhandled" }
+    function library(): string   { return root.openView("browse") ? "ok" : "unhandled" }
     function notifications(): string {
       root.toggleNotifications()
       return root.notificationsOn ? "off" : "on"

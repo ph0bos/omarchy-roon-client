@@ -127,6 +127,46 @@ widget must always name the zone.
     SUPER+ALT+M     zones
     SUPER+CTRL+M    Roon Radio toggle
 
+## R2 is an overlay, and the TIDAL UX comes with it
+
+Settled at the start of R2, after R1 deliberately left it open: **the full client
+is an `entryPoints.overlay` surface, not a standalone app.**
+
+The brief said "an app, not a plugin", and the honest price of that turned out to
+be the whole reason to decide the other way. A standalone process cannot
+`import qs.Ui` or `qs.Commons`: no `Color`, no `Style`, no `BorderSurface`, no
+`PanelSlider`. It would need a theme adapter reading `~/.local/state/omarchy/current/`
+and its own copy of every shell primitive -- paid up front, before a single
+browse list appears on screen.
+
+What settles it is that **the UX already exists**. `omarchy-tidal` ships ~5,400
+lines of QML built for exactly these surfaces:
+
+    Overlay.qml            the summoned window, its chrome and keyboard model
+    views/HomeView         a tiled landing page of library roots
+    views/DetailView       an album or artist page
+    views/PlayerView       transport, queue, quality
+    views/NowPlayingView   the full-screen player, art washes and all
+    components/SetupWizard the first-run rungs, already rendered
+    components/            Shelf, LibraryGrid, TrackRow, SeekBar, ArtCard,
+                           QuickMenu, TiltFrame, RoundedImage, ScrollHint...
+    lib/Design.js          the shared spacing and type scale
+
+Every one of those imports `qs.Commons` or `qs.Ui`. As an overlay they port with
+their theming intact; as an app they would each need rewriting against the
+adapter. The daemon seam does not change either way, which is what kept the
+decision open this long.
+
+The port is a substitution, not a rewrite: `TidalApi.js` becomes `Roond.js` (which
+R1 already has), Mopidy's RPC becomes the local API, and Tidal's flat
+`{id, title, artist}` objects become browse-tree positions -- the one place the
+shapes genuinely differ, because Roon has no metadata API to return objects from.
+
+**`SetupWizard.qml` is the piece most worth having.** The first-run wizard was
+chosen in R1 and never built; the rungs differ (discovery, pairing, approval,
+RoonBridge, zone) but the shape -- a blocking step that polls until a human acts
+elsewhere -- is the same component.
+
 ## Screens
 
 **First-class:** Now Playing (ported `NowPlayingView`, `SeekBar`, `TiltFrame`,
@@ -154,7 +194,7 @@ each other around. Search is the case that forces this.
 it does today.
 
 **Queue** subscribes once at 100 items per pinned zone, re-subscribing only on
-zone change.
+zone change. Built in R2 -- see *The queue, as built* below.
 
 ## Resilience
 
@@ -394,7 +434,11 @@ bargain Mopidy's HTTP frontend makes, and nothing here is reachable off-machine.
 | `POST /volume` | `{output_id, value, how}` |
 | `POST /settings` | `{zone_id, shuffle?, loop?, auto_radio?}` |
 | `POST /browse`, `POST /load` | the browse tree, options passed through |
-| `WS /ws` | `state` on connect, then `zones` / `connected` / `disconnected` / `awaiting_approval` |
+| `POST /page` | browse + load as one move, locked per `session_key` |
+| `GET /setup` | the five first-run rungs, each with what to do about it |
+| `GET /queue` | the pinned zone's queue, from the daemon's own subscription |
+| `POST /play_from_here` | `{zone_id?, queue_item_id}`; the zone defaults to the pin |
+| `WS /ws` | `state` on connect, then `zones` / `queue` / `connected` / `disconnected` / `awaiting_approval` |
 
 Two deliberate absences. **There is no art route**: `/state` publishes
 `image_base` and QML points `Image` straight at the Core, which is measurably
@@ -415,6 +459,211 @@ not fail -- registration simply never answers. Reporting that silence as a
 connection error sends the user hunting for a network fault instead of opening
 Roon on their phone. The reconnect loop polls every 3s while in that state,
 because a human is acting right then.
+
+### The queue, as built
+
+One subscription, following the pinned zone, re-subscribed only when the pin
+moves. `/queue` is then a read of the daemon's own memory rather than a call to
+the Core, which is what lets a surface poll it as cheaply as `/zones`.
+
+Two things this shape is protecting against:
+
+**A subscription per zone would mean holding every room's list to render one.**
+The queue is ~100 items of three display strings each. A surface that wants
+another room's queue pins that room; there is no `/queue/<zone_id>`, because a
+route that answers for an unsubscribed zone would have to either lie or block.
+
+**Only `Subscribed` is verified against a live Core.** `queue.json` is a capture
+of it. The `changes` operations -- `remove(index, count)` and
+`insert(index, items)` -- are taken from `node-roon-api-transport` and have not
+been observed here. So `QueueStore` applies what it recognises and sets `stale`
+on anything it does not, stopping rather than guessing; `RoonSession` re-subscribes
+when it sees the flag. One round trip per unknown operation, against a list that
+would otherwise be quietly out of step with the Core forever.
+
+`_ensure_queue_subscription` runs on the read loop's own thread, so everything in
+the subscription path is fire-and-forget rather than `call()`: waiting there for
+a reply that only the same thread can read is a deadlock.
+
+`play_from_here` takes the Core's `queue_item_id` and nothing else. There is no
+"play item n" -- a position is not a handle, because the list edits underneath it.
+
+### The overlay, as built
+
+Two views behind one summoned window, because a plugin only ever gets one
+panel-kind entry point loaded: the shell picks `panel` over `overlay` over
+`menu` and loads that one. Now playing and the queue therefore cannot be
+separate surfaces -- they are views chosen by the summon payload.
+
+    omarchy-shell roon overlay      ->  {"view":"nowPlaying"}
+    omarchy-shell roon queue        ->  {"view":"queue"}
+
+Ported from `omarchy-tidal` with the theming intact, as the overlay decision
+promised: `Overlay.qml`'s structure (screen picking, the cross-fade between
+views, the keyboard model), `HeaderButton`, `RoundedImage`, `SeekBar`,
+`PlayerBar`, and `lib/Design.js`.
+
+What changed in the port, and why:
+
+**No links on the title and the artist.** Tidal's transport strip makes both a
+way into their pages. Roon has no metadata API, so there is no artist object to
+open -- an artist page is a position in a browse tree. Making them look
+clickable would be a promise the API cannot keep. What takes their place on the
+right is what Roon knows and Tidal does not: the room, and the format actually
+leaving this machine.
+
+**Seconds, not milliseconds.** Tidal's `SeekBar` works in ms because Mopidy
+does; `/seek` and Roon's own verb both take seconds, so the conversion is gone
+rather than doubled.
+
+**`RoonMark` came out of the bar widget** into `components/`, so the header and
+the bar wear the same mark. Two drawings of "Roon" that drifted apart would read
+as two plugins.
+
+**Which queue row is playing is a match, not a fact.** `now_playing` has no
+track id to compare a `queue_item_id` against, so the row is marked by matching
+the display strings. It is cosmetic: when it is wrong, a row is un-marked and
+nothing else changes.
+
+Two pieces of state the surfaces needed from the service:
+
+**`probed`** -- false until the first answer, either way. "Not answered yet" and
+"answered and it is down" look identical on a boolean, and a surface that treats
+them the same shows a connection error every time the shell restarts. It is the
+same trap `AwaitingApproval` models on the daemon side.
+
+**`openSurfaces`** -- how many of the plugin's windows are on screen. The state
+poll speeds up while any of them is, the queue is only fetched while one is, and
+the notification card is silenced for a track a surface is already showing.
+
+**`image_base` became a session property.** `/state` built it from the Core's
+address, which is right for a real Core and wrong for `--demo`: the demo session
+serves its invented sleeve from the daemon itself, and a queue row built from a
+demo Core's address would ask a machine that is not there. The bar never noticed
+because MPRIS hands it a finished URL.
+
+Verified on a live Core: first summon, both views, no QML warnings in the
+journal, the queue subscription bound against a real 8-zone Core and the row
+rendering with art, duration and the playing marker.
+
+### The menu, the keyboard map, and the wizard
+
+Three surfaces that finish the window, all ported in shape from `omarchy-tidal`
+and rebuilt around what Roon actually exposes.
+
+**QuickMenu** (`M`) carries shuffle, repeat, Roon Radio, track notifications, the
+keyboard map -- and the rooms. Two things worth knowing about it:
+
+* **Shuffle, repeat and Roon Radio are properties of the ZONE, not of this
+  client.** Changing one changes it for the room, and for whoever is looking at
+  their phone. That is Roon's model, so the menu reads the zone's own settings
+  rather than anything stored here, and re-reads after every change instead of
+  guessing -- the daemon is on loopback and answers before the menu redraws.
+* **The rooms belong in this menu** rather than behind a surface of their own,
+  because the pin is what MPRIS, the media keys, the bar and the queue all
+  follow. Switching rooms changes what the whole window is about.
+
+**ShortcutSheet** (`?`) lists only keys this window actually handles. The Super
+bindings are shown as `omarchy-shell` commands under "if you bind them", because
+a plugin cannot install a keybinding and advertising one as though it were
+already yours is a small lie the first keypress exposes.
+
+**SetupWizard** -- owed since R1, where "put it in the UI" was chosen and only
+the terminal `doctor` was built. The daemon computes the ladder at `GET /setup`;
+the wizard renders it and polls every 2s while it is on screen, because the rung
+people get stuck on is one a human is acting on *right now* on a phone.
+
+Five rungs, in the order things must happen: Core found, paired, approved in
+Roon, RoonBridge running, this machine visible as a zone. Each carries its own
+`fix`, because "Approved in Roon" on its own is a diagnosis without a treatment.
+
+Three decisions inside it are worth keeping:
+
+**Discovery is not a rung.** It is part of the first one. With a host configured
+by hand, discovery can be entirely broken and everything still works -- so
+reporting it as a failure would tell someone to fix what is not their problem.
+It is reported in rung 1's detail instead ("found by discovery"), and its fix
+mentions the firewall.
+
+**`blocked` is not `failed`.** An unapproved extension does not fail; nothing is
+broken and someone simply has to say yes somewhere else. It is drawn as *waiting
+on you*, in the accent rather than in `Color.urgent`.
+
+**A blocked rung outranks an earlier pending one.** Pairing happens *during*
+registration, so a person waiting for approval has an unfinished "paired" rung
+sitting ABOVE a blocked "approved" one. Pointing at the first unfinished rung
+would send them to the one whose fix reads "nothing to do" while the thing
+actually stopping them sits below it. `summary()` prefers the blocked rung, and
+`test_a_blocked_rung_wins_over_an_earlier_pending_one` is why.
+
+**The daemon is rung zero, and the only one QML synthesises.** Every other rung
+is computed *by* the daemon, so when it is not answering there is no ladder to
+draw and the reason is the ladder.
+
+The wizard shows only once both probes have answered -- `probed` and
+`setupProbed` -- never merely because nothing has come back yet. Both are
+asynchronous and the first summon after a shell restart beats them, so testing
+readiness alone would open the wizard on a perfectly healthy install every time.
+Verified by stopping the daemon under a live overlay: the card shrank to the
+ladder, and when the daemon came back it returned by itself to the view the
+summon had asked for.
+
+### Browse and search, as built
+
+`GET /page` is the route surfaces actually use, and it exists because of one
+fact: **browse is a cursor, not a query.** The Core holds a position per
+`multi_session_key`, `browse` moves it and `load` reads a window of wherever it
+now is. Sending those as two HTTP requests promises nothing about what happened
+in between, so `browse.py` does the pair under a lock held per session key and
+serves it as one request. `test_two_requests_on_one_key_do_not_interleave` is
+that guarantee written down.
+
+`/browse` and `/load` stay exposed, and paging deliberately uses `/load`
+directly: reading another window must not move the cursor, and re-sending the
+`item_key` would push into the same item twice.
+
+A browse reply is not always a list. `action: "list"` means load it; `"message"`
+is the Core saying something (often an error); anything else changed an item in
+place. Only the list path is verified against a live Core, so unknown actions
+are passed through untouched rather than guessed at -- a surface can say "the
+Core said X" honestly, where inventing a list would be a lie. Action rows send
+their message to Omarchy's own OSD.
+
+**The demo grew a library.** `--demo` now serves an invented tree -- albums,
+artists, tracks, a working search -- with the same cursor semantics a Core has,
+so the browse surfaces can be built and photographed without a subscription and
+without anyone's listening history.
+
+#### Two races, both found by running it rather than reading it
+
+**A derived binding is not reliably current inside the change handler of what it
+derives from.** `searching` is `query.trim() !== ""`, and on the FIRST keystroke
+`onQueryChanged` still read it as false -- so it took the "query is empty"
+branch, re-loaded the browse root, and the answer landed on top of the search.
+On screen: you type, the header says "Search", and the browse root is listed
+underneath it. The fix is to compute the value from `query` in the handler
+rather than read the binding.
+
+**Whichever answer lands last wins, even when it is not the one asked for last.**
+Browse is asynchronous and a Core is not uniformly fast: a slow root load
+arriving after a search, or "mile" arriving after "miles", paints an answer to a
+question nobody is asking any more. Every move now takes a ticket -- a serial
+bumped per request -- and only the current ticket may draw. Paging checks it
+too, because appending a stale window splices another list's rows into this one.
+
+Neither was visible in a unit test or a code read; both were obvious within
+seconds of typing into the real thing against a real Core. That is the argument
+for `--demo` and for actually running it.
+
+#### What an artist page is
+
+There is still no metadata API, so an artist page is a position in the tree, and
+that is exactly how it renders: searching "miles" and pressing Enter on the top
+hit lands on `Play Artist` plus his albums, which IS the artist page. Back is
+`pop_levels: 1` rather than a remembered URL, and inside a search it pops within
+the results rather than abandoning the search -- being thrown back to the
+library root from an album you reached by searching loses the search you were
+working in.
 
 ### Proven end to end against a live Core
 

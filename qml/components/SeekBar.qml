@@ -1,0 +1,145 @@
+import QtQuick
+import qs.Commons
+import "../lib/Design.js" as Design
+
+// The playhead: a rail, a filled portion, a grab handle, and optionally the
+// two times either side of it.
+//
+// Scrubbing previews locally and commits one seek on release. Dragging fires on
+// every mouse move, and a seek per move floods the Core and makes the audio
+// stutter under the cursor -- so the service's clock is moved directly while the
+// handle is held and Roon is told once, at the end.
+//
+// Ported from omarchy-tidal, with one substitution: this plugin works in
+// seconds throughout, because that is what the daemon's `/seek` takes and what
+// Roon's own `seek` verb takes. Tidal's copy worked in milliseconds for Mopidy.
+Item {
+  id: root
+
+  property var svc: null
+  property color foreground: Color.menu.text
+  property string fontFamily: Style.font.menuFamily
+  property bool showTimes: true
+
+  // Usually the theme's accent; the now-playing face passes the sleeve's
+  // colour, so the playhead belongs to the record it is playing.
+  property color accent: Color.accent
+  property int railHeight: Style.space(4)
+
+  readonly property real position: svc ? svc.position : 0
+  readonly property real length: svc ? svc.length : 0
+  readonly property bool interactive: svc ? svc.canSeek : false
+  readonly property real progress: length > 0
+    ? Math.max(0, Math.min(1, position / length)) : 0
+
+  property bool scrubbing: false
+
+  implicitHeight: Style.space(26)
+
+  function fractionToSeconds(fraction) {
+    return Math.max(0, Math.min(1, fraction)) * root.length
+  }
+
+  function previewFraction(fraction) {
+    if (!root.svc || root.length <= 0) return
+    root.svc.previewSeek(root.fractionToSeconds(fraction))
+  }
+
+  function commitFraction(fraction) {
+    if (!root.svc || root.length <= 0) return
+    root.svc.commitSeek(root.fractionToSeconds(fraction))
+  }
+
+  Text {
+    textFormat: Text.PlainText
+    id: elapsed
+    anchors.left: parent.left
+    anchors.verticalCenter: parent.verticalCenter
+    width: root.showTimes ? Style.space(34) : 0
+    visible: root.showTimes
+    text: Design.clock(root.position)
+    color: Color.muted
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+    horizontalAlignment: Text.AlignRight
+  }
+
+  Text {
+    textFormat: Text.PlainText
+    id: total
+    anchors.right: parent.right
+    anchors.verticalCenter: parent.verticalCenter
+    width: root.showTimes ? Style.space(34) : 0
+    visible: root.showTimes
+    text: Design.clock(root.length)
+    color: Color.muted
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+  }
+
+  Item {
+    id: track
+    anchors.left: elapsed.right
+    anchors.right: total.left
+    anchors.leftMargin: root.showTimes ? Style.space(9) : 0
+    anchors.rightMargin: root.showTimes ? Style.space(9) : 0
+    anchors.verticalCenter: parent.verticalCenter
+    height: parent.height
+
+    Rectangle {
+      id: rail
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      height: root.railHeight
+      radius: height / 2
+      color: Qt.rgba(Color.muted.r, Color.muted.g, Color.muted.b, 0.28)
+
+      Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: parent.width * root.progress
+        radius: parent.radius
+        color: root.accent
+      }
+    }
+
+    // Grows under the cursor so the bar reads as grabbable.
+    Rectangle {
+      id: knob
+      width: seekMouse.containsMouse || root.scrubbing ? Style.space(11) : Style.space(8)
+      height: width
+      radius: width / 2
+      color: root.accent
+      anchors.verticalCenter: rail.verticalCenter
+      x: Math.max(0, Math.min(rail.width, rail.width * root.progress)) - width / 2
+      visible: root.length > 0 && root.interactive
+
+      Behavior on width { NumberAnimation { duration: Design.fast } }
+    }
+
+    MouseArea {
+      id: seekMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      enabled: root.interactive
+      cursorShape: Qt.PointingHandCursor
+      preventStealing: true
+
+      onPressed: function(mouse) {
+        root.scrubbing = true
+        root.previewFraction(mouse.x / width)
+      }
+      onPositionChanged: function(mouse) {
+        if (root.scrubbing) root.previewFraction(mouse.x / width)
+      }
+      onReleased: function(mouse) {
+        if (!root.scrubbing) return
+        root.scrubbing = false
+        root.commitFraction(mouse.x / width)
+      }
+      onCanceled: root.scrubbing = false
+    }
+  }
+}

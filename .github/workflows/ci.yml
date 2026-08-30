@@ -83,7 +83,7 @@ jobs:
           set -euo pipefail
           lint=$(command -v qmllint6 || command -v qmllint || echo /usr/lib/qt6/bin/qmllint)
           fail=0
-          for f in qml/*.qml qml/components/*.qml; do
+          for f in qml/*.qml qml/components/*.qml qml/views/*.qml; do
             out=$("$lint" "$f" 2>&1 || true)
             echo "$out" | grep -E 'Unexpected|syntax|shadows final|Cannot override' && {
               echo "::error file=$f::QML would fail to load"; fail=1; }

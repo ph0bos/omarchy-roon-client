@@ -105,90 +105,16 @@ Panel {
     // as an application rather than as another audio glyph.
     text: ""
     iconComponent: Component {
+      // The mark lives in components/RoonMark.qml so the overlay header wears
+      // the same one. It sizes itself from `markHeight` rather than from its
+      // box, so it is centred in whatever the bar gives the icon.
       Item {
-        id: mark
-
-        // A level meter in the bar's own foreground -- no accent, no gradient.
-        // Every other icon in this cluster is a flat monochrome glyph, and a
-        // coloured one stops reading as part of the set and starts reading as a
-        // notification. State is carried by motion and weight instead: the bars
-        // move while audio is playing and sit still, dimmer, when it is not.
-        //
-        // NOTE: never name a property here `x`, `y`, `width`, `height` or
-        // `scale`. They are FINAL on QQuickItem, and shadowing one makes the
-        // whole widget fail to load with nothing but a warning in the journal.
-        readonly property real span: Math.min(width, height)
-        readonly property real barW: Math.max(1, Math.round(span * 0.15))
-        readonly property real gap: Math.max(1, Math.round(span * 0.13))
-        readonly property real maxH: span * 0.9
-        readonly property bool live: root.playing && root.daemonUp
-
-        Row {
+        RoonMark {
           anchors.centerIn: parent
-          spacing: mark.gap
-
-          Repeater {
-            // Four bars, evenly weighted. Five was a bar too many at this size:
-            // the gaps closed up and it read as a smear rather than as levels.
-            model: [
-              { rest: 0.30, peak: 0.58, ms: 700 },
-              { rest: 0.58, peak: 0.98, ms: 920 },
-              { rest: 0.42, peak: 0.80, ms: 780 },
-              { rest: 0.26, peak: 0.52, ms: 1040 }
-            ]
-
-            delegate: Rectangle {
-              id: barRect
-              required property var modelData
-              required property int index
-
-              width: mark.barW
-              height: mark.maxH * modelData.rest
-              radius: mark.barW / 2
-              color: root.markColor
-              opacity: (mark.live ? 1.0 : 0.55) * (root.daemonUp ? 1.0 : 0.3)
-              anchors.verticalCenter: parent.verticalCenter
-              antialiasing: true
-
-              // Each bar at its own tempo and phase, so they never move in
-              // lockstep -- the difference between a level meter and a spinner.
-              SequentialAnimation on height {
-                running: mark.live
-                loops: Animation.Infinite
-                PauseAnimation { duration: barRect.index * 120 }
-                NumberAnimation {
-                  to: mark.maxH * barRect.modelData.peak
-                  duration: barRect.modelData.ms
-                  easing.type: Easing.InOutSine
-                }
-                NumberAnimation {
-                  to: mark.maxH * barRect.modelData.rest
-                  duration: barRect.modelData.ms
-                  easing.type: Easing.InOutSine
-                }
-              }
-
-              // Settle rather than snap when playback stops.
-              Behavior on height {
-                enabled: !mark.live
-                NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
-              }
-            }
-          }
-        }
-
-        // Daemon down: struck through, so "not connected" never reads as merely
-        // "nothing playing".
-        Rectangle {
-          anchors.centerIn: parent
-          width: mark.span * 0.98
-          height: Math.max(1, Math.round(mark.span * 0.085))
-          radius: height / 2
+          markHeight: Math.min(parent.width, parent.height)
           color: root.markColor
-          rotation: -45
-          visible: !root.daemonUp
-          opacity: 0.85
-          antialiasing: true
+          live: root.playing && root.daemonUp
+          struck: !root.daemonUp
         }
       }
     }

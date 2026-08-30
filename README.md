@@ -22,9 +22,9 @@ This takes the other path. A small daemon holds the connection to your Core and
 publishes it to the desktop; the bar shows what is playing and lets you drive it.
 There is no window, no Electron, and no browser engine.
 
-**Release 1 is the endpoint and the bar.** Browsing, search and the queue live in
-the daemon's API already, but the surfaces for them are R2 — you pick the music
-from your phone, and this machine plays it.
+**The endpoint, the bar, and a summoned player with the queue.** Browse, search
+and artist pages are still to come — you pick the music from your phone, and this
+machine plays it, shows it, and lets you drive it from here.
 
 ## Requirements
 
@@ -111,11 +111,72 @@ not a guess.
 Keys, if you want them, in `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("SUPER + R",         "Roon",            "omarchy-shell roon player")
+o.bind("SUPER + R",         "Roon",            "omarchy-shell roon overlay")
+o.bind("SUPER + ALT + R",   "Roon queue",      "omarchy-shell roon queue")
 o.bind("SUPER + SHIFT + R", "Roon play/pause", "omarchy-shell roon playpause")
 ```
 
-`omarchy-shell roon status|zone|next|previous|notifications|refresh` are there too.
+`omarchy-shell roon status|zone|next|previous|notifications|refresh` are there
+too, and `omarchy-shell roon player` opens the bar's mini player rather than the
+full window.
+
+## The player
+
+A summoned window, over whatever you are working in, on the screen you are
+looking at. Escape closes it; it remembers where you were.
+
+Two faces:
+
+**Now playing** — the sleeve, the track, the room, and a live spectrum analyser
+reading the same PipeWire signal that reaches your DAC. The page is washed in
+the record's own colour, and the format leaving this machine is on the foot of
+it.
+
+**The queue** — what is coming next in the pinned room, with the count and the
+time left. Click any row to play from there; everything after it stays. Roon's
+own `play_from_here`, so it behaves exactly as it does on your phone.
+
+The transport strip is shared by both, because the controls should not disappear
+because you switched to the queue.
+
+```bash
+omarchy-shell roon overlay          # now playing
+omarchy-shell roon queue            # straight to the queue
+omarchy-shell roon library          # straight to the library
+```
+
+Inside: `Space` play/pause, `←`/`→` previous and next, `N` now playing, `Q`
+queue, `L` library, `/` search, `M` menu, `?` keys, `Escape` to close.
+
+**The library** — `L` or the book in the header. Browse your Roon library, or
+search it: results come back as Roon's own — a top hit, then artists, albums,
+composers, tracks and works. Enter opens a row, Backspace goes back, and an
+artist page is what you get by opening an artist, because in Roon that is
+literally what an artist page is: a position in a server-driven tree, not an
+object with an address.
+
+`M` opens the menu — shuffle, repeat, Roon Radio, track notifications, and the
+rooms. Switching rooms here switches everything: the bar, the media keys and the
+queue all follow the same pinned zone. `?` shows the keyboard map.
+
+Browse, search, and artist and album pages are not here yet — see
+[Known constraints](#known-constraints).
+
+### First run
+
+If anything between this machine and sound in the room is missing, the window
+opens on a five-step ladder instead of the player: Core found, paired, approved
+in Roon, RoonBridge running, this machine visible as a zone. Each step says what
+to do about itself, and the one you are stuck on is the one that is expanded.
+
+The step people get stuck on is approval, and it is not a failure: an unapproved
+extension does not error, it simply never answers. **Roon ships no interface for
+Linux**, so enabling "Roon for Omarchy" under Settings → Extensions has to happen
+on a phone or another computer. The wizard polls while you do it and moves on by
+itself.
+
+`omarchy-roon-endpoint doctor` is the same ladder in a terminal, plus the audio
+and firewall checks. It is read-only.
 
 ## How it works
 
@@ -124,7 +185,7 @@ Roon app (phone)  ──▶  Roon Core  ──RAAT──▶  RoonBridge  ──�
                             │                                      │
                             └── MOO/WS ──▶ omarchy-roond ──▶ MPRIS ─┘
                                                  │
-                                          HTTP + WS ──▶ the bar
+                                          HTTP + WS ──▶ bar + player
 ```
 
 **The daemon owns the one thing QML cannot do**: discovery is UDP, pairing needs
@@ -170,6 +231,11 @@ a bug:
   and an image key. Everything downstream parses those.
 - **No favouriting.** It lives in Roon's browse action lists, which are not
   reachable from what is playing.
+- **An artist page is a position, not an object.** There is no metadata API to
+  fetch one from, so opening an artist walks the browse tree to where their
+  albums are. It works, and it is why there is no way to link to one.
+- **One queue at a time.** The daemon holds a single queue subscription, and it
+  follows the pinned zone. Pin another room to see its queue.
 - **Discovery is fragile.** Omarchy's default firewall drops the reply, and a Core
   in a bridge-networked container never sees the broadcast at all. There are three
   discovery tiers for this reason, and `doctor` will tell you which one is in play.

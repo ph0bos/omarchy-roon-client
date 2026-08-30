@@ -4,15 +4,17 @@
   "name": "Roon",
   "version": "0.1.1",
   "author": "ph0bos",
-  "description": "What is playing in your Roon zone, in the Omarchy bar. Endpoint playback, transport, and zone switching for a Roon Core on your network.",
+  "description": "Roon in the Omarchy shell: what is playing in your zone, an endpoint on this machine, transport, zone switching, and a summonable player with the queue.",
   "kinds": [
     "service",
-    "bar-widget"
+    "bar-widget",
+    "overlay"
   ],
   "keepLoaded": true,
   "entryPoints": {
     "service": "qml/Service.qml",
-    "barWidget": "qml/BarWidget.qml"
+    "barWidget": "qml/BarWidget.qml",
+    "overlay": "qml/Overlay.qml"
   },
   "barWidget": {
     "displayName": "Roon",
