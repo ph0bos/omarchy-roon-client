@@ -48,13 +48,41 @@ Item {
 
   property string query: ""
 
+  // Search is somewhere you go, not a filter on the page you were reading.
+  // Arriving there shows an empty field over a search page rather than the
+  // browse tree with a box in the corner, which is what it was before.
+  property bool searchMode: false
+
+  // The last few things you looked for, in this session. Not written anywhere:
+  // a search history is a listening history, and this one costs nothing to
+  // rebuild.
+  property var recentSearches: []
+
+  // Two characters before asking. Roon's search is two round trips and a
+  // library is large; one letter is a question nobody meant to ask.
+  readonly property int minimumQuery: 2
+
+  // Roon titles the list it returns, but only once it has answered. The trail
+  // needs a name for where it starts before then.
+  readonly property string hierarchyLabel: {
+    switch (root.hierarchy) {
+      case "albums": return "Albums"
+      case "artists": return "Artists"
+      case "genres": return "Genres"
+      case "composers": return "Composers"
+      case "playlists": return "Playlists"
+      case "internet_radio": return "Live radio"
+      default: return "Explore"
+    }
+  }
+
   // Every move takes a ticket, and only the current ticket may draw. Browse is
   // asynchronous and a Core is not uniformly fast: a slow root load landing
   // after a search -- or a search for "mile" landing after one for "miles" --
   // otherwise paints an answer to a question nobody asked any more. This is
   // that bug's fix, and it was a real one, observed rather than imagined.
   property int serial: 0
-  readonly property bool searching: query.trim() !== ""
+  readonly property bool searching: query.trim().length >= root.minimumQuery
   // Whether the last thing rendered came from a search, so the flip between
   // tree and results can clear the list exactly once.
   property bool wasSearching: false
@@ -170,7 +198,34 @@ Item {
   // Jump straight into one of Roon's hierarchies, which is what the sidebar
   // does. Leaving a search is part of it: the sidebar is a different place, not
   // a filter on the one you were already in.
+  function beginSearch() {
+    // Take a ticket first. Arriving at search from elsewhere may have just
+    // created this view, whose own first load is already in flight -- and
+    // without this its answer lands a moment later and paints a library page
+    // under a search header.
+    root.serial = root.serial + 1
+    root.loading = false
+    root.searchMode = true
+    root.items = []
+    root.listInfo = null
+    root.message = ""
+    if (root.query !== "") root.query = ""
+    root.focusSearch()
+  }
+
+  function focusSearch() { searchField.forceActiveFocus() }
+
+  function remember(typed) {
+    var next = [typed]
+    for (var i = 0; i < root.recentSearches.length && next.length < 6; i++) {
+      if (root.recentSearches[i] !== typed) next.push(root.recentSearches[i])
+    }
+    root.recentSearches = next
+  }
+
   function openHierarchy(name) {
+    // Leaving search: the sidebar is a different place, not a filter on this one.
+    root.searchMode = false
     root.hierarchy = name
     if (root.query !== "") root.query = ""   // reloads through onQueryChanged
     else root.openRoot()
@@ -204,11 +259,19 @@ Item {
       if (root.searching) root.query = ""
       return
     }
+    root.popTo(root.trail.length - 2)
+  }
+
+  // Climb back to a named step in the trail. `index` is a position in it;
+  // -1 means the hierarchy the trail hangs off.
+  function popTo(index) {
+    var levels = root.trail.length - 1 - index
+    if (levels <= 0) return
     var ticket = ++root.serial
     root.loading = true
-    var trail = root.trail.slice(0, root.trail.length - 1)
+    var trail = root.trail.slice(0, index + 1)
     Roond.page({ session_key: root.activeKey, hierarchy: root.activeHierarchy,
-                 pop_levels: 1, count: 100 },
+                 pop_levels: levels, count: 100 },
       function(r) { root.apply(r, trail, ticket) },
       function(e) { root.fail(e, ticket) })
   }
@@ -230,7 +293,15 @@ Item {
     // took the "query is empty" branch and re-loaded the browse root, whose
     // answer then landed on top of the search.
     var typed = String(root.query).trim()
-    if (typed !== "") {
+    if (typed.length > 0 && typed.length < root.minimumQuery) {
+      // Typed, but not enough to ask about. Nothing in flight, nothing stale.
+      debounce.stop()
+      root.loading = false
+      root.items = []
+      root.listInfo = null
+      return
+    }
+    if (typed.length >= root.minimumQuery) {
       // Clear as soon as the mode flips, not when the answer lands. Roon's
       // search is two round trips and a real Core takes a second or three over
       // it; leaving the tree on screen under a "Search" header for that long
@@ -242,6 +313,14 @@ Item {
       }
       root.loading = true
       debounce.restart()
+    } else if (root.searchMode) {
+      // Back to an empty search page rather than back to the tree: you are
+      // still in search, you have just stopped asking.
+      debounce.stop()
+      root.wasSearching = false
+      root.loading = false
+      root.items = []
+      root.listInfo = null
     } else {
       debounce.stop()
       root.wasSearching = false
@@ -251,7 +330,8 @@ Item {
 
   function runSearch() {
     var typed = String(root.query).trim()
-    if (typed === "") return
+    if (typed.length < root.minimumQuery) return
+    root.remember(typed)
     var ticket = ++root.serial
     root.loading = true
     Roond.page({ session_key: root.searchKey, hierarchy: "search",
@@ -334,29 +414,90 @@ Item {
       onActivated: root.goBack()
     }
 
-    Text {
-      textFormat: Text.PlainText
+    // The trail rather than just the title: "Albums › Slow Light" says how you
+    // got here, which a server-driven tree otherwise hides. Each step back is a
+    // click, because a breadcrumb you cannot use is decoration.
+    Row {
+      id: crumbs
       anchors.left: backButton.right
       anchors.leftMargin: Style.space(8)
       anchors.right: searchBox.left
       anchors.rightMargin: Style.space(12)
       anchors.verticalCenter: parent.verticalCenter
-      elide: Text.ElideRight
-      text: {
-        // The trail rather than just the title: "Albums › Slow Light" says how
-        // you got here, which a server-driven tree otherwise hides. A search is
-        // the root of its own trail, so pushing into a result reads
-        // "Search › Miles Davis" rather than losing either half.
-        var names = root.searching ? ["Search"] : []
-        for (var i = 0; i < root.trail.length; i++) names.push(root.trail[i].title)
-        if (names.length === 0)
-          return root.listInfo ? String(root.listInfo.title || "") : ""
-        return names.join("  ›  ")
+      spacing: Style.space(7)
+      clip: true
+
+      // The place the trail starts from: the hierarchy, or the search itself.
+      Text {
+        textFormat: Text.PlainText
+        anchors.verticalCenter: parent.verticalCenter
+        text: {
+          if (root.searchMode || root.searching) return "Search"
+          if (root.trail.length === 0)
+            return root.listInfo ? String(root.listInfo.title || "") : ""
+          return root.hierarchyLabel
+        }
+        color: root.trail.length === 0 ? root.foreground
+                                       : (rootCrumb.containsMouse ? Color.accent : Color.muted)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        font.weight: root.trail.length === 0 ? Font.DemiBold : Font.Normal
+
+        MouseArea {
+          id: rootCrumb
+          anchors.fill: parent
+          hoverEnabled: true
+          enabled: root.trail.length > 0
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.popTo(-1)
+        }
       }
-      color: root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      font.weight: Font.DemiBold
+
+      Repeater {
+        model: root.trail
+
+        Row {
+          id: crumb
+          required property var modelData
+          required property int index
+
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(7)
+
+          readonly property bool last: crumb.index === root.trail.length - 1
+
+          Text {
+            textFormat: Text.PlainText
+            anchors.verticalCenter: parent.verticalCenter
+            text: "›"
+            color: Color.muted
+            opacity: 0.7
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            anchors.verticalCenter: parent.verticalCenter
+            text: String(crumb.modelData.title || "")
+            elide: Text.ElideRight
+            color: crumb.last ? root.foreground
+                              : (step.containsMouse ? Color.accent : Color.muted)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.weight: crumb.last ? Font.DemiBold : Font.Normal
+
+            MouseArea {
+              id: step
+              anchors.fill: parent
+              hoverEnabled: true
+              enabled: !crumb.last
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.popTo(crumb.index)
+            }
+          }
+        }
+      }
     }
 
     Text {
@@ -394,11 +535,37 @@ Item {
         font.pixelSize: Style.font.caption
       }
 
+      // Clearing the field is a click, not a held backspace.
+      Text {
+        textFormat: Text.PlainText
+        id: clearButton
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(8)
+        anchors.verticalCenter: parent.verticalCenter
+        visible: searchField.text !== ""
+        text: "\uf00d"
+        color: clearHover.containsMouse ? Color.accent : Color.muted
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+
+        MouseArea {
+          id: clearHover
+          anchors.fill: parent
+          anchors.margins: -Style.space(5)
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: {
+            searchField.text = ""
+            searchField.forceActiveFocus()
+          }
+        }
+      }
+
       TextInput {
         id: searchField
         anchors.left: searchGlyph.right
         anchors.leftMargin: Style.space(7)
-        anchors.right: parent.right
+        anchors.right: clearButton.visible ? clearButton.left : parent.right
         anchors.rightMargin: Style.space(8)
         anchors.verticalCenter: parent.verticalCenter
         clip: true
@@ -422,7 +589,10 @@ Item {
           textFormat: Text.PlainText
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          visible: searchField.text === "" && !searchField.activeFocus
+          // Stays while the field is empty, focused or not: a placeholder that
+          // vanishes the moment you click into the box is a label you can only
+          // read when you do not need it.
+          visible: searchField.text === ""
           text: "Search your library"
           color: Color.muted
           opacity: 0.7
@@ -597,6 +767,87 @@ Item {
     }
   }
 
+  // ---- the search page, before you have asked it anything ----
+  Column {
+    anchors.top: header.bottom
+    anchors.topMargin: Style.space(40)
+    anchors.horizontalCenter: parent.horizontalCenter
+    width: Math.min(parent.width - Style.space(80), Style.space(460))
+    spacing: Style.space(14)
+    visible: root.searchMode && !root.searching && !root.loading
+             && root.items.length === 0
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      text: root.query.length > 0 ? "Keep typing…" : "Search your library"
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.title
+      font.weight: Font.DemiBold
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.WordWrap
+      // Saying what comes back is worth two lines: Roon answers a search with
+      // a best guess and then a count per category, which is not what most
+      // search boxes do and is better than it sounds.
+      text: "Roon answers with its best match, then artists, albums, "
+          + "composers, tracks and works."
+      color: Color.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Flow {
+      width: parent.width
+      spacing: Style.space(8)
+      visible: root.recentSearches.length > 0 && root.query === ""
+
+      Repeater {
+        model: root.recentSearches
+
+        Rectangle {
+          id: recent
+          required property var modelData
+
+          width: recentLabel.implicitWidth + Style.space(22)
+          height: Style.space(28)
+          radius: height / 2
+          color: recentHover.containsMouse
+            ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.18)
+            : Qt.rgba(Color.muted.r, Color.muted.g, Color.muted.b, 0.12)
+          Behavior on color { ColorAnimation { duration: Design.fast } }
+
+          Text {
+            textFormat: Text.PlainText
+            id: recentLabel
+            anchors.centerIn: parent
+            text: String(recent.modelData)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          MouseArea {
+            id: recentHover
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              searchField.text = String(recent.modelData)
+              root.focusSearch()
+            }
+          }
+        }
+      }
+    }
+  }
+
   // ---- what is going on, when it is not a list ----
   Text {
     textFormat: Text.PlainText
@@ -604,7 +855,7 @@ Item {
     width: parent.width - Style.space(80)
     horizontalAlignment: Text.AlignHCenter
     wrapMode: Text.WordWrap
-    visible: root.items.length === 0
+    visible: root.items.length === 0 && !(root.searchMode && !root.searching)
     text: {
       if (root.loading) return root.searching ? "Searching…" : "Loading…"
       if (root.message !== "") return root.message

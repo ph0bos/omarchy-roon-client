@@ -834,6 +834,38 @@ own app.
 so the now-playing page shows the next nine beside the record when there is
 room for them, each one a `play_from_here` away.
 
+### Search, made into a place
+
+It began as a field in the corner of the library page, which meant search was
+something you did to the page you were already on. It is somewhere you go now:
+its own entry in the sidebar, `/` from anywhere in the window, and arriving
+puts the cursor in the field over an empty search page rather than over whatever
+you were reading.
+
+Four smaller things that were wrong:
+
+* **One letter is a question nobody meant to ask.** Roon's search is two round
+  trips against a large library, so it waits for two characters as well as for
+  the 350ms pause.
+* **The placeholder vanished on focus** -- a label you can only read when you do
+  not need it. It stays until you type, and a clear button appears when you have.
+* **Clearing the field dropped you back into the browse tree.** You are still in
+  search, you have just stopped asking, so it returns to the empty search page.
+* **The empty page says what Roon does**, because answering with a best guess and
+  then a count per category is not what most search boxes do.
+
+Recent searches live in memory for the session and are written nowhere. A search
+history is a listening history, and this one costs nothing to rebuild.
+
+**Breadcrumbs climb.** Each step in the trail is a click that pops that many
+levels -- `pop_levels` is in the API and the crumb was already on screen; a
+breadcrumb you cannot use is decoration.
+
+One more race, the same shape as the others: arriving at search may have just
+created the library view, whose own first load is already in flight. Without
+taking a ticket first, that answer lands a moment later and paints a library
+page under a search header -- which is exactly what it did, once.
+
 ### Proven end to end against a live Core
 
 Discovery through all three tiers; register; silent reconnect with a stored token;

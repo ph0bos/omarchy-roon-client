@@ -28,7 +28,8 @@ Item {
         { keys: "N", what: "Now playing" },
         { keys: "Q", what: "The queue" },
         { keys: "H", what: "Home" },
-        { keys: "L  /", what: "The library" },
+        { keys: "L", what: "The library" },
+        { keys: "/", what: "Search" },
         { keys: "Tab", what: "Sidebar, and back" },
         { keys: "M", what: "Menu: modes and rooms" },
         { keys: "?", what: "This list" },
@@ -49,7 +50,6 @@ Item {
         { keys: "\u2191 \u2193", what: "Move" },
         { keys: "Enter", what: "Open it, or play it" },
         { keys: "Backspace", what: "Back up a level" },
-        { keys: "/", what: "Search" },
         { keys: "Esc", what: "Leave the search field" }
       ]
     },

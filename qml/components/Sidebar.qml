@@ -39,6 +39,7 @@ Item {
     {
       title: "Library",
       items: [
+        { key: "search",    label: "Search",     glyph: "\uf002" },
         { key: "albums",    label: "Albums",     glyph: "" },
         { key: "artists",   label: "Artists",    glyph: "" },
         { key: "genres",    label: "Genres",     glyph: "" },

@@ -145,14 +145,20 @@ the transport strip to leave, and you land back exactly where you were.
 
 ![Now playing](docs/screenshots/overlay-nowplaying.png)
 
-**The library** — anything in the sidebar, or `L`. Browse your Roon library, or
-search it: results come back as Roon's own — a top hit, then artists, albums,
-composers, tracks and works. `Enter` opens a row, `Backspace` goes back, and a
-wall of covers is drawn as a grid while a track list stays a list.
+**The library** — anything in the sidebar, or `L`. Browse your Roon library:
+`Enter` opens a row, `Backspace` goes back or a breadcrumb takes you straight
+there, and a wall of covers is drawn as a grid while a track list stays a list.
 
 An artist page is what you get by opening an artist, because in Roon that is
 literally what an artist page is: a position in a server-driven tree, not an
 object with an address.
+
+**Search** — `/` from anywhere in the window, or Search in the sidebar. It opens
+on an empty page with the cursor already in the field, waits for two characters
+before asking, and remembers what you looked for while the window is open —
+written nowhere, because a search history is a listening history. Results come
+back as Roon's own: a best match first, then artists, albums, composers, tracks
+and works.
 
 ![The library](docs/screenshots/overlay-library.png)
 

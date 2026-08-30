@@ -34,10 +34,16 @@ Item {
   // Which of Roon's hierarchies the library view is in, so the sidebar can show
   // where you are rather than merely which view is up.
   property string hierarchy: "albums"
-  // The sidebar's own key: a view for the first two entries, a hierarchy for
-  // the rest.
-  readonly property string place:
-    currentView === "browse" ? root.hierarchy : root.currentView
+
+  // Searching is a place of its own, and the sidebar should say so while you
+  // are in it rather than leaving the last hierarchy lit.
+  readonly property bool searchingNow:
+    currentView === "browse" && browseLoader.item ? browseLoader.item.searchMode : false
+
+  // The sidebar's own key: a view for the standalone entries, a hierarchy for
+  // the library ones.
+  readonly property string place: currentView !== "browse" ? currentView
+    : (root.searchingNow ? "search" : root.hierarchy)
   property bool sidebarFocused: false
 
   // Now playing is the record, given the whole window -- the same move TIDAL's
@@ -134,6 +140,15 @@ Item {
     if (root.currentView !== "nowPlaying") root.lastPageView = root.place
     if (key === "nowPlaying" || key === "queue" || key === "home") {
       root.currentView = key
+      return
+    }
+    if (key === "search") {
+      // Search is a page you arrive at with the cursor already in the field --
+      // not a box in the corner of whatever you were reading.
+      root.currentView = "browse"
+      Qt.callLater(function() {
+        if (browseLoader.item) browseLoader.item.beginSearch()
+      })
       return
     }
     var moved = root.hierarchy !== key
@@ -256,8 +271,11 @@ Item {
         } else if (event.key === Qt.Key_M) {
           root.menuOpen = !root.menuOpen
           event.accepted = true
-        } else if (event.key === Qt.Key_L || event.key === Qt.Key_Slash) {
+        } else if (event.key === Qt.Key_L) {
           root.goTo(root.hierarchy, false)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Slash) {
+          root.goTo("search", false)
           event.accepted = true
         } else if (event.key === Qt.Key_Tab) {
           root.sidebarFocused = !root.sidebarFocused
