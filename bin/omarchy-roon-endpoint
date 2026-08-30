@@ -1,0 +1,398 @@
+#!/usr/bin/env bash
+# Make this machine a Roon endpoint, the Omarchy way.
+#
+#   omarchy-roon-endpoint doctor      what is true right now (default, read-only)
+#   omarchy-roon-endpoint install     aur/roonbridge + the user service + config
+#   omarchy-roon-endpoint firewall    the ufw rules RAAT needs (asks for sudo)
+#   omarchy-roon-endpoint pipewire    route the enabled output through PipeWire
+#   omarchy-roon-endpoint daemon      install + start the daemon (MPRIS, API)
+#   omarchy-roon-endpoint start|stop|restart|logs
+#   omarchy-roon-endpoint uninstall   remove what we added (leaves the package)
+#
+# This deliberately wraps rather than reimplements. `aur/roonbridge` already
+# downloads and packages Roon's binaries, and pacman tracks them; there is no
+# reason to write another downloader. What it does NOT do -- and what nothing
+# else does -- is the three things below, which are the whole point of this
+# script:
+#
+#   1. Run RoonBridge as YOU, not root. The packaged unit is User=root, and root
+#      cannot reach a per-user PipeWire session, so a root bridge can only take
+#      a raw ALSA device exclusively -- which kills system sound and the
+#      visualiser. A --user unit with XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS
+#      fixes that.
+#   2. Point RAATServer at `plug:pipewire`. Not `default`: PipeWire's default
+#      device answers ALSA's hardware probing incorrectly, and the plug layer
+#      wraps it so probing succeeds.
+#   3. Open the ports RAAT actually needs -- including UDP 30000-65535 for clock
+#      sync. Miss that one and streams die about a second in, silently, which
+#      presents as random track skipping rather than as a firewall problem.
+set -uo pipefail
+
+BRIDGE_DIR="/opt/RoonBridge"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-roon"
+ROON_DATA="$DATA_DIR/roon"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+UNIT="$UNIT_DIR/omarchy-roon-bridge.service"
+UNIT_NAME="omarchy-roon-bridge"
+DEVICE_NAME="${OMARCHY_ROON_DEVICE_NAME:-$(hostname) (Omarchy)}"
+
+red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+blue()  { printf '\033[34m%s\033[0m\n' "$*"; }
+warn()  { printf '\033[33m%s\033[0m\n' "$*"; }
+dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+
+ok=0
+pass() { green "  ok       $1"; }
+fail() { red   "  MISSING  $1"; ok=1; }
+note() { dim   "           $1"; }
+
+# pacman needs privileges and this may run from a graphical launcher with no
+# terminal, so fall back to pkexec the way the TIDAL setup does.
+run_priv() {
+  if [[ $EUID -eq 0 ]]; then "$@"
+  elif command -v sudo >/dev/null && sudo -n true 2>/dev/null; then sudo "$@"
+  elif [[ -t 0 ]] && command -v sudo >/dev/null; then sudo "$@"
+  elif command -v pkexec >/dev/null; then pkexec "$@"
+  else red "need root for: $*"; return 1
+  fi
+}
+
+have_pkg() { pacman -Q "$1" &>/dev/null; }
+
+# ---------------------------------------------------------------- doctor
+doctor() {
+  blue "RoonBridge endpoint"
+
+  if have_pkg roonbridge; then
+    pass "aur/roonbridge $(pacman -Q roonbridge | awk '{print $2}')"
+  else
+    fail "aur/roonbridge not installed"
+    note "run: omarchy-roon-endpoint install"
+  fi
+
+  if [[ -x "$BRIDGE_DIR/start.sh" ]]; then
+    pass "$BRIDGE_DIR/start.sh"
+    [[ -r "$BRIDGE_DIR/VERSION" ]] && note "$(sed -n 2p "$BRIDGE_DIR/VERSION")"
+  else
+    fail "$BRIDGE_DIR/start.sh"
+  fi
+
+  # RoonBridge self-updates by unpacking into its own directory. Owned by root,
+  # that silently fails and the Core eventually refuses an out-of-date endpoint.
+  if [[ -d "$BRIDGE_DIR" ]]; then
+    if [[ -w "$BRIDGE_DIR" ]]; then
+      pass "$BRIDGE_DIR is writable (self-update can work)"
+    else
+      fail "$BRIDGE_DIR is not writable by $USER"
+      note "RoonBridge updates itself in place; root ownership blocks that"
+      note "run: omarchy-roon-endpoint install"
+    fi
+  fi
+
+  if systemctl --user list-unit-files "$UNIT_NAME.service" &>/dev/null \
+     && [[ -f "$UNIT" ]]; then
+    pass "user service installed"
+    if systemctl --user is-active --quiet "$UNIT_NAME"; then
+      pass "RoonBridge running as $USER"
+    else
+      fail "RoonBridge not running"
+      note "run: omarchy-roon-endpoint start"
+    fi
+  else
+    fail "user service not installed"
+  fi
+
+  # The packaged root unit and ours would fight over the same audio device.
+  if systemctl is-enabled --quiet roonbridge 2>/dev/null; then
+    fail "the packaged root roonbridge.service is enabled"
+    note "two bridges will fight for the device; run install to mask it"
+  fi
+
+  if systemctl --user is-active --quiet omarchy-roond 2>/dev/null; then
+    pass "daemon running"
+    if busctl --user list 2>/dev/null | grep -q omarchy_roon; then
+      pass "MPRIS published (the Media bar widget will show it)"
+    else
+      fail "MPRIS not on the session bus"
+      note "install python-gobject, then restart the daemon"
+    fi
+  else
+    fail "daemon not running"
+    note "run: omarchy-roon-endpoint daemon"
+  fi
+
+  blue "audio"
+  if pgrep -x pipewire >/dev/null; then pass "pipewire running"; else fail "pipewire not running"; fi
+  if [[ -e /usr/lib/alsa-lib/libasound_module_pcm_pipewire.so ]]; then
+    pass "pipewire-alsa (plug:pipewire available)"
+  else
+    fail "pipewire-alsa not installed"
+    note "without it RAATServer cannot open plug:pipewire"
+  fi
+
+  local dev_json
+  dev_json=$(grep -rl '"plug:pipewire"' "$ROON_DATA/RAATServer/Settings" 2>/dev/null | head -1)
+  if [[ -n "$dev_json" ]]; then
+    pass "RAATServer device set to plug:pipewire"
+    note "$dev_json"
+  elif [[ -d "$ROON_DATA/RAATServer/Settings" ]]; then
+    warn "  PENDING  RAATServer has not written a device yet"
+    note "start the bridge, then enable this zone once in the Roon app"
+  else
+    fail "no RAATServer settings yet"
+  fi
+
+  blue "firewall"
+  if ! systemctl is-active --quiet ufw 2>/dev/null; then
+    pass "ufw inactive (nothing to open)"
+  else
+    local rules; rules=$(cat /etc/ufw/user.rules 2>/dev/null)
+    grep -q 'dport 9200' <<<"$rules"                  && pass "tcp/9200 (RAAT control)"      || fail "tcp/9200 (RAAT control)"
+    grep -qE 'dports 30000:65535.*tcp|tcp.*30000:65535' <<<"$rules" \
+      && pass "tcp/30000-65535 (audio)" || fail "tcp/30000-65535 (audio)"
+    if grep -qE 'udp.*30000:65535|dports 30000:65535.*udp' <<<"$rules"; then
+      pass "udp/30000-65535 (clock sync)"
+    else
+      fail "udp/30000-65535 (clock sync)"
+      note "without this, streams stop about a second in and look like skipping"
+    fi
+    grep -q 'dport 9003' <<<"$rules" && pass "udp/9003 (discovery)" || \
+      { warn "  OPTIONAL udp/9003 (discovery)"; note "the client falls back to a unicast sweep without it"; }
+  fi
+
+  echo
+  if [[ $ok -eq 0 ]]; then
+    green "endpoint looks good — select it in the Roon app as \"$DEVICE_NAME\""
+  else
+    warn "some checks failed; see the suggestions above"
+  fi
+  return $ok
+}
+
+# --------------------------------------------------------------- install
+install_endpoint() {
+  if ! have_pkg roonbridge; then
+    blue "installing aur/roonbridge"
+    if command -v yay >/dev/null; then
+      yay -S --noconfirm --needed roonbridge
+    elif command -v paru >/dev/null; then
+      paru -S --noconfirm --needed roonbridge
+    else
+      red "no AUR helper (yay or paru) found"
+      note "install roonbridge from the AUR, then re-run this"
+      return 1
+    fi
+
+    # The AUR helper builds fine without a terminal but cannot escalate for the
+    # final `pacman -U`: sudo wants a TTY, and this may well be launched from a
+    # menu entry. The built package is sitting in the helper's cache either way,
+    # so install it ourselves through run_priv, which falls back to pkexec and
+    # its graphical prompt.
+    if ! have_pkg roonbridge; then
+      local built
+      built=$(ls -t "${XDG_CACHE_HOME:-$HOME/.cache}"/{yay,paru}/roonbridge/roonbridge-*.pkg.tar.* 2>/dev/null \
+              | grep -v -- '-debug-' | head -1)
+      if [[ -n "$built" ]]; then
+        warn "the AUR helper could not escalate; installing the package it built"
+        dim  "  $built"
+        run_priv pacman -U --noconfirm "$built" || { red "install failed"; return 1; }
+      else
+        red "no built package found to install"
+        note "run in a terminal: yay -S roonbridge"
+        return 1
+      fi
+    fi
+  else
+    dim "aur/roonbridge already installed"
+  fi
+
+  # The packaged unit runs as root and would contend for the same device.
+  if systemctl is-enabled --quiet roonbridge 2>/dev/null; then
+    blue "disabling the packaged root service"
+    run_priv systemctl disable --now roonbridge
+  fi
+  run_priv systemctl mask roonbridge 2>/dev/null || true
+
+  # RoonBridge updates itself by unpacking into its own directory, so it has to
+  # own that directory. pacman upgrades reset this; doctor re-checks it.
+  if [[ ! -w "$BRIDGE_DIR" ]]; then
+    blue "giving $USER ownership of $BRIDGE_DIR (needed for self-update)"
+    run_priv chown -R "$USER:$USER" "$BRIDGE_DIR" || return 1
+  fi
+
+  mkdir -p "$ROON_DATA" "$UNIT_DIR"
+
+  blue "writing $UNIT"
+  cat > "$UNIT" <<UNITEOF
+[Unit]
+Description=RoonBridge (Omarchy, user session)
+Documentation=https://github.com/ph0bos/omarchy-roon-client
+After=network-online.target pipewire.service wireplumber.service
+Wants=network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# Runs as you, not root: root cannot reach your PipeWire session, and a root
+# bridge can only take a raw ALSA device exclusively -- which silences system
+# audio and the visualiser.
+Environment=ROON_DATAROOT=$ROON_DATA
+Environment=ROON_ID_DIR=$ROON_DATA
+ExecStart=$BRIDGE_DIR/start.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNITEOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$UNIT_NAME"
+  green "RoonBridge started as $USER"
+  dim "give it a few seconds, then look for \"$DEVICE_NAME\" in the Roon app"
+  echo
+  warn "next: omarchy-roon-endpoint firewall   (RAAT needs UDP open for clock sync)"
+}
+
+# ------------------------------------------------------------- pipewire
+# RAATServer enumerates raw ALSA hardware only -- confirmed in its own log, which
+# lists `hw:CARD=...` and nothing else. There is no way for it to discover
+# PipeWire, so routing through PipeWire means rewriting the device it wrote after
+# you enabled one in the Roon app.
+#
+# Why bother: taking a hw: device gives RoonBridge exclusive use of the card, so
+# system sound and the visualiser go silent whenever Roon holds it. Routing via
+# `plug:pipewire` shares the card. `plug:` rather than `pipewire:` because
+# PipeWire's own PCM answers ALSA's hardware probing incorrectly; the plug layer
+# wraps it so probing succeeds.
+pipewire_route() {
+  local settings="$ROON_DATA/RAATServer/Settings"
+  local files=( "$settings"/device_*.json )
+
+  if [[ ! -e "${files[0]}" ]]; then
+    warn "RAATServer has not written a device yet"
+    note "open Roon -> Settings -> Audio, find \"$(hostname)\", and enable one"
+    note "output; then run this again and it will be routed through PipeWire"
+    return 1
+  fi
+
+  local changed=0
+  for f in "${files[@]}"; do
+    local before; before=$(cat "$f")
+    if grep -q '"plug:pipewire"' "$f"; then
+      dim "already routed: $(basename "$f")"
+      continue
+    fi
+    cp "$f" "$f.bak"
+    python3 - "$f" "$DEVICE_NAME" <<'PYEOF'
+import json, sys
+path, name = sys.argv[1], sys.argv[2]
+d = json.load(open(path))
+out = d.setdefault("output", {})
+out["type"] = "alsa"
+out["device"] = "plug:pipewire"
+out.setdefault("name", name)
+# PipeWire's plug device exposes no ALSA mixer, so Roon must attenuate in
+# software or the zone gets no volume control at all.
+d["volume"] = {"type": "software"}
+json.dump(d, open(path, "w"), indent=2)
+PYEOF
+    green "routed $(basename "$f") through plug:pipewire"
+    note "backup: $f.bak"
+    changed=1
+  done
+
+  if (( changed )); then
+    blue "restarting the bridge"
+    systemctl --user restart "$UNIT_NAME"
+    dim "give Roon a few seconds to pick the change up"
+  fi
+}
+
+# ---------------------------------------------------------------- daemon
+# The bridge makes this machine playable-to. The daemon is what gives it a
+# presence on the desktop: it holds the Roon connection and publishes MPRIS, and
+# Omarchy's own Media bar widget takes it from there. Both are --user units.
+DAEMON_UNIT_NAME="omarchy-roond"
+DAEMON_UNIT="$UNIT_DIR/$DAEMON_UNIT_NAME.service"
+
+daemon_install() {
+  local backend
+  backend="$(cd "$(dirname "${BASH_SOURCE[0]}")/../backend" && pwd)" || return 1
+  if [[ ! -d "$backend/omarchy_roond" ]]; then
+    red "cannot find the daemon package next to this script"
+    return 1
+  fi
+
+  mkdir -p "$UNIT_DIR"
+  blue "writing $DAEMON_UNIT"
+  cat > "$DAEMON_UNIT" <<UNITEOF
+[Unit]
+Description=Roon for Omarchy (daemon: Roon connection, local API, MPRIS)
+Documentation=https://github.com/ph0bos/omarchy-roon-client
+After=network-online.target
+Wants=network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=$backend
+ExecStart=/usr/bin/python3 -m omarchy_roond --serve
+# A Core that reboots should look like a pause, not a crash. The stored pairing
+# token means reconnecting never asks anyone to approve anything again.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNITEOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$DAEMON_UNIT_NAME"
+
+  # Python startup plus bus registration takes a moment, and a doctor run that
+  # beats it reports "MPRIS not on the session bus" -- a red line telling the
+  # user to fix something that is merely still starting.
+  local i
+  for i in $(seq 1 15); do
+    busctl --user list 2>/dev/null | grep -q omarchy_roon && break
+    sleep 0.5
+  done
+  green "daemon started"
+  dim "MPRIS: org.mpris.MediaPlayer2.omarchy_roon — add the Media widget to your bar"
+}
+
+# -------------------------------------------------------------- firewall
+firewall() {
+  if ! systemctl is-active --quiet ufw 2>/dev/null; then
+    green "ufw is not active; nothing to open"
+    return 0
+  fi
+  blue "adding ufw rules for RAAT"
+  run_priv ufw allow 9200/tcp        comment 'Roon RAAT control'      || return 1
+  run_priv ufw allow 30000:65535/tcp comment 'Roon RAAT audio'        || return 1
+  # The one everybody misses. Without it the stream dies about a second in and
+  # presents as track skipping rather than as a blocked port.
+  run_priv ufw allow 30000:65535/udp comment 'Roon RAAT clock sync'   || return 1
+  run_priv ufw allow 9003/udp        comment 'Roon discovery (SOOD)'  || true
+  green "done"
+}
+
+case "${1:-doctor}" in
+  doctor)     doctor ;;
+  install)    install_endpoint && echo && ok=0 && doctor ;;
+  firewall)   firewall && echo && ok=0 && doctor ;;
+  pipewire)   pipewire_route && echo && ok=0 && doctor ;;
+  daemon)     daemon_install && echo && ok=0 && doctor ;;
+  start)      systemctl --user start "$UNIT_NAME"   && green "started" ;;
+  stop)       systemctl --user stop "$UNIT_NAME"    && green "stopped" ;;
+  restart)    systemctl --user restart "$UNIT_NAME" && green "restarted" ;;
+  logs)       journalctl --user -u "$UNIT_NAME" -n "${2:-100}" --no-pager ;;
+  uninstall)
+    systemctl --user disable --now "$UNIT_NAME" 2>/dev/null
+    rm -f "$UNIT"; systemctl --user daemon-reload
+    green "removed the user service (aur/roonbridge and $ROON_DATA are untouched)"
+    ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \?//' ; exit 1 ;;
+esac

@@ -1,0 +1,55 @@
+{
+  "items": [
+    {
+      "title": "Library",
+      "subtitle": null,
+      "image_key": null,
+      "item_key": "11:0",
+      "hint": "list"
+    },
+    {
+      "title": "Playlists",
+      "subtitle": null,
+      "image_key": null,
+      "item_key": "11:1",
+      "hint": "list"
+    },
+    {
+      "title": "My Live Radio",
+      "subtitle": null,
+      "image_key": null,
+      "item_key": "11:2",
+      "hint": "list"
+    },
+    {
+      "title": "Genres",
+      "subtitle": null,
+      "image_key": null,
+      "item_key": "11:3",
+      "hint": "list"
+    },
+    {
+      "title": "TIDAL",
+      "subtitle": null,
+      "image_key": null,
+      "item_key": "11:4",
+      "hint": "list"
+    },
+    {
+      "title": "Settings",
+      "subtitle": null,
+      "image_key": null,
+      "item_key": "11:5",
+      "hint": "list"
+    }
+  ],
+  "offset": 0,
+  "list": {
+    "level": 0,
+    "title": "Explore",
+    "subtitle": null,
+    "image_key": null,
+    "count": 6,
+    "display_offset": null
+  }
+}

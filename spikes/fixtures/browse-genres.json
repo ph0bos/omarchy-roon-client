@@ -1,0 +1,69 @@
+{
+  "items": [
+    {
+      "title": "Ambient",
+      "subtitle": "729 Artists, 2253 Albums",
+      "image_key": null,
+      "item_key": "14:0",
+      "hint": "list"
+    },
+    {
+      "title": "Post-Rock",
+      "subtitle": "70 Artists, 118 Albums",
+      "image_key": null,
+      "item_key": "14:1",
+      "hint": "list"
+    },
+    {
+      "title": "Electronic",
+      "subtitle": "54 Artists, 92 Albums",
+      "image_key": null,
+      "item_key": "14:2",
+      "hint": "list"
+    },
+    {
+      "title": "Jazz",
+      "subtitle": "22 Artists, 35 Albums",
+      "image_key": null,
+      "item_key": "14:3",
+      "hint": "list"
+    },
+    {
+      "title": "Classical",
+      "subtitle": "21 Artists, 31 Albums",
+      "image_key": null,
+      "item_key": "14:4",
+      "hint": "list"
+    },
+    {
+      "title": "Folk",
+      "subtitle": "19 Artists, 20 Albums",
+      "image_key": null,
+      "item_key": "14:5",
+      "hint": "list"
+    },
+    {
+      "title": "Downtempo",
+      "subtitle": "18 Artists, 20 Albums",
+      "image_key": null,
+      "item_key": "14:6",
+      "hint": "list"
+    },
+    {
+      "title": "Shoegaze",
+      "subtitle": "16 Artists, 8 Albums",
+      "image_key": null,
+      "item_key": "14:7",
+      "hint": "list"
+    }
+  ],
+  "offset": 0,
+  "list": {
+    "level": 0,
+    "title": "Genres",
+    "subtitle": null,
+    "image_key": null,
+    "count": 21,
+    "display_offset": null
+  }
+}

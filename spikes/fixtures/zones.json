@@ -1,0 +1,485 @@
+{
+  "zones": [
+    {
+      "zone_id": "16014aa8632ebc7f92440124ad62e6a47f11",
+      "display_name": "Lounge",
+      "outputs": [
+        {
+          "output_id": "17014aa8632ebc7f92440124ad62e6a47f11",
+          "zone_id": "16014aa8632ebc7f92440124ad62e6a47f11",
+          "can_group_with_output_ids": [
+            "17014aa8632ebc7f92440124ad62e6a47f11",
+            "17012609a04d15192c407c278d3203eaed0c",
+            "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+            "1701349efe8e2e5657adbb505b895551af92",
+            "170105e221a0d39571c0d1bd6a8c3d77ce01",
+            "170100c8dba47a97c963f04d6fe07d0cff8f"
+          ],
+          "display_name": "Lounge",
+          "volume": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "value": 45,
+            "step": 1,
+            "is_muted": false,
+            "hard_limit_min": 0,
+            "hard_limit_max": 100,
+            "soft_limit": 100
+          },
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Lounge",
+              "supports_standby": false,
+              "status": "indeterminate"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 11,
+      "queue_time_remaining": 2826,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 7,
+        "length": 184,
+        "one_line": {
+          "line1": "Parallax - Nocturne Atlas"
+        },
+        "two_line": {
+          "line1": "Parallax",
+          "line2": "Nocturne Atlas"
+        },
+        "three_line": {
+          "line1": "Parallax",
+          "line2": "Nocturne Atlas",
+          "line3": "Slow Light"
+        },
+        "image_key": "4e279071f492baf6ad987c26a74755a4",
+        "artist_image_keys": [
+          "856d00bd6c35ab627d3f717b3f295f47"
+        ]
+      }
+    },
+    {
+      "zone_id": "160100c8dba47a97c963f04d6fe07d0cff8f",
+      "display_name": "Study",
+      "outputs": [
+        {
+          "output_id": "170100c8dba47a97c963f04d6fe07d0cff8f",
+          "zone_id": "160100c8dba47a97c963f04d6fe07d0cff8f",
+          "can_group_with_output_ids": [
+            "17014aa8632ebc7f92440124ad62e6a47f11",
+            "17012609a04d15192c407c278d3203eaed0c",
+            "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+            "1701349efe8e2e5657adbb505b895551af92",
+            "170105e221a0d39571c0d1bd6a8c3d77ce01",
+            "170100c8dba47a97c963f04d6fe07d0cff8f"
+          ],
+          "display_name": "Study",
+          "volume": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "value": 2,
+            "step": 1,
+            "is_muted": false,
+            "hard_limit_min": 0,
+            "hard_limit_max": 100,
+            "soft_limit": 100
+          },
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Study",
+              "supports_standby": false,
+              "status": "indeterminate"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 1,
+      "queue_time_remaining": 38,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 313,
+        "length": 351,
+        "one_line": {
+          "line1": "Harbour Lights - Nocturne Atlas"
+        },
+        "two_line": {
+          "line1": "Harbour Lights",
+          "line2": "Nocturne Atlas"
+        },
+        "three_line": {
+          "line1": "Harbour Lights",
+          "line2": "Nocturne Atlas",
+          "line3": "Slow Light"
+        },
+        "image_key": "6818ede7d6ef3b1a5c5c5fc24379c5dd",
+        "artist_image_keys": [
+          "856d00bd6c35ab627d3f717b3f295f47"
+        ]
+      }
+    },
+    {
+      "zone_id": "1601349efe8e2e5657adbb505b895551af92",
+      "display_name": "Loft",
+      "outputs": [
+        {
+          "output_id": "1701349efe8e2e5657adbb505b895551af92",
+          "zone_id": "1601349efe8e2e5657adbb505b895551af92",
+          "can_group_with_output_ids": [
+            "17014aa8632ebc7f92440124ad62e6a47f11",
+            "17012609a04d15192c407c278d3203eaed0c",
+            "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+            "1701349efe8e2e5657adbb505b895551af92",
+            "170105e221a0d39571c0d1bd6a8c3d77ce01",
+            "170100c8dba47a97c963f04d6fe07d0cff8f"
+          ],
+          "display_name": "Loft",
+          "volume": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "value": 75,
+            "step": 1,
+            "is_muted": false,
+            "hard_limit_min": 0,
+            "hard_limit_max": 100,
+            "soft_limit": 100
+          },
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Loft",
+              "supports_standby": false,
+              "status": "indeterminate"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 3,
+      "queue_time_remaining": 871,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 31,
+        "length": 335,
+        "one_line": {
+          "line1": "Everything Nearby - Field Notes"
+        },
+        "two_line": {
+          "line1": "Everything Nearby",
+          "line2": "Field Notes"
+        },
+        "three_line": {
+          "line1": "Everything Nearby",
+          "line2": "Field Notes",
+          "line3": "Quiet Machines"
+        },
+        "image_key": "b3111d41ace414957d3d1958bd79f5cb",
+        "artist_image_keys": [
+          "91a67576e2324cf486b4cb797eed3231"
+        ]
+      }
+    },
+    {
+      "zone_id": "16012609a04d15192c407c278d3203eaed0c",
+      "display_name": "Conservatory",
+      "outputs": [
+        {
+          "output_id": "17012609a04d15192c407c278d3203eaed0c",
+          "zone_id": "16012609a04d15192c407c278d3203eaed0c",
+          "can_group_with_output_ids": [
+            "17014aa8632ebc7f92440124ad62e6a47f11",
+            "17012609a04d15192c407c278d3203eaed0c",
+            "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+            "1701349efe8e2e5657adbb505b895551af92",
+            "170105e221a0d39571c0d1bd6a8c3d77ce01",
+            "170100c8dba47a97c963f04d6fe07d0cff8f"
+          ],
+          "display_name": "Conservatory",
+          "volume": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "value": 30,
+            "step": 1,
+            "is_muted": false,
+            "hard_limit_min": 0,
+            "hard_limit_max": 100,
+            "soft_limit": 100
+          },
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Conservatory",
+              "supports_standby": false,
+              "status": "indeterminate"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 11,
+      "queue_time_remaining": 2730,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 102,
+        "length": 336,
+        "one_line": {
+          "line1": "Low Tide - Field Notes"
+        },
+        "two_line": {
+          "line1": "Low Tide",
+          "line2": "Field Notes"
+        },
+        "three_line": {
+          "line1": "Low Tide",
+          "line2": "Field Notes",
+          "line3": "Quiet Machines"
+        },
+        "image_key": "5fa3a34071482cf95f0ab1505a4c7b4a",
+        "artist_image_keys": [
+          "91a67576e2324cf486b4cb797eed3231"
+        ]
+      }
+    },
+    {
+      "zone_id": "16017b7d9a6b8d10fb0303e3ee4737c2fd77",
+      "display_name": "Workshop",
+      "outputs": [
+        {
+          "output_id": "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+          "zone_id": "16017b7d9a6b8d10fb0303e3ee4737c2fd77",
+          "can_group_with_output_ids": [
+            "17014aa8632ebc7f92440124ad62e6a47f11",
+            "17012609a04d15192c407c278d3203eaed0c",
+            "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+            "1701349efe8e2e5657adbb505b895551af92",
+            "170105e221a0d39571c0d1bd6a8c3d77ce01",
+            "170100c8dba47a97c963f04d6fe07d0cff8f"
+          ],
+          "display_name": "Workshop",
+          "volume": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "value": 47,
+            "step": 1,
+            "is_muted": false,
+            "hard_limit_min": 0,
+            "hard_limit_max": 50,
+            "soft_limit": 50
+          },
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Workshop",
+              "supports_standby": false,
+              "status": "indeterminate"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 11,
+      "queue_time_remaining": 2232,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 5,
+        "length": 130,
+        "one_line": {
+          "line1": "Winter Count - Ardent Hours"
+        },
+        "two_line": {
+          "line1": "Winter Count",
+          "line2": "Ardent Hours"
+        },
+        "three_line": {
+          "line1": "Winter Count",
+          "line2": "Ardent Hours",
+          "line3": "The Long Way Round"
+        },
+        "image_key": "bfbf986d536016a92a963fcb803fb72a",
+        "artist_image_keys": [
+          "4632386b25991ac210ff6fbefca4d982"
+        ]
+      }
+    },
+    {
+      "zone_id": "160102f420700c6018e973f41f55b7231179",
+      "display_name": "Network Streamer",
+      "outputs": [
+        {
+          "output_id": "170102f420700c6018e973f41f55b7231179",
+          "zone_id": "160102f420700c6018e973f41f55b7231179",
+          "can_group_with_output_ids": [
+            "170102f420700c6018e973f41f55b7231179"
+          ],
+          "display_name": "Network Streamer",
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Network Streamer",
+              "supports_standby": false,
+              "status": "standby"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 14,
+      "queue_time_remaining": 2987,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 116,
+        "length": 199,
+        "one_line": {
+          "line1": "Signal Fire - Ardent Hours"
+        },
+        "two_line": {
+          "line1": "Signal Fire",
+          "line2": "Ardent Hours"
+        },
+        "three_line": {
+          "line1": "Signal Fire",
+          "line2": "Ardent Hours",
+          "line3": "The Long Way Round"
+        },
+        "image_key": "3a227df66ed974b523653df48ebb441a",
+        "artist_image_keys": [
+          "4632386b25991ac210ff6fbefca4d982"
+        ]
+      }
+    },
+    {
+      "zone_id": "160105e221a0d39571c0d1bd6a8c3d77ce01",
+      "display_name": "Terrace",
+      "outputs": [
+        {
+          "output_id": "170105e221a0d39571c0d1bd6a8c3d77ce01",
+          "zone_id": "160105e221a0d39571c0d1bd6a8c3d77ce01",
+          "can_group_with_output_ids": [
+            "17014aa8632ebc7f92440124ad62e6a47f11",
+            "17012609a04d15192c407c278d3203eaed0c",
+            "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+            "1701349efe8e2e5657adbb505b895551af92",
+            "170105e221a0d39571c0d1bd6a8c3d77ce01",
+            "170100c8dba47a97c963f04d6fe07d0cff8f"
+          ],
+          "display_name": "Terrace",
+          "volume": {
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "value": 32,
+            "step": 1,
+            "is_muted": false,
+            "hard_limit_min": 0,
+            "hard_limit_max": 100,
+            "soft_limit": 100
+          },
+          "source_controls": [
+            {
+              "control_key": "1",
+              "display_name": "Terrace",
+              "supports_standby": false,
+              "status": "indeterminate"
+            }
+          ]
+        }
+      ],
+      "state": "paused",
+      "is_next_allowed": true,
+      "is_previous_allowed": true,
+      "is_pause_allowed": false,
+      "is_play_allowed": true,
+      "is_seek_allowed": true,
+      "queue_items_remaining": 5,
+      "queue_time_remaining": 1276,
+      "settings": {
+        "loop": "disabled",
+        "shuffle": false,
+        "auto_radio": true
+      },
+      "now_playing": {
+        "seek_position": 335,
+        "length": 385,
+        "one_line": {
+          "line1": "Paper Cranes - Marble Arch"
+        },
+        "two_line": {
+          "line1": "Paper Cranes",
+          "line2": "Marble Arch"
+        },
+        "three_line": {
+          "line1": "Paper Cranes",
+          "line2": "Marble Arch",
+          "line3": "Interiors"
+        },
+        "image_key": "543678861b99585ff9a9b90f79e1a3f8",
+        "artist_image_keys": [
+          "c78c525b879cca3e5b2798bcf1b97d9d"
+        ]
+      }
+    }
+  ]
+}

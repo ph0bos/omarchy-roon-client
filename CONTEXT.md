@@ -1,0 +1,871 @@
+# Roon for Omarchy — design context
+
+Plugin id `quickshell.roon`. A Roon controller and local endpoint built into the
+Omarchy shell, taking the chrome and the install machinery from `omarchy-tidal`
+and almost none of its data model.
+
+Not affiliated with or endorsed by Roon Labs. That line ships in the README and
+in Settings, not as a footnote.
+
+## The three constraints everything else follows from
+
+**Roon Core does the playing.** Every Roon client is a controller against a Core
+on the LAN. RAAT is closed and licensed to hardware partners, so the only way to
+make this machine a zone is RoonBridge — a proprietary binary that cannot be
+redistributed.
+
+**There is no metadata API.** Browse is a generic, server-driven list machine:
+`{title, subtitle, image_key, hint}` and a cursor. `now_playing` is, in full,
+`seek_position`, `length`, `image_key`, and the pre-formatted display strings
+`one_line` / `two_line` / `three_line`. No sample rate, no bit depth, no codec,
+no signal path, and no track, album or artist IDs.
+
+Observed on the live Core, the `three_line` convention holds exactly:
+`line1` title, `line2` artist, `line3` album. `two_line` drops the album;
+`one_line` is `"Title - Artist"`. Parse `three_line` and nothing else.
+
+One undocumented gift: `now_playing.artist_image_keys` is a real array of image
+keys, absent from the JSDoc. Artist photography is therefore available for the
+Now Playing backdrop, which the sleeve-only design did not assume.
+
+**Roon ships no GUI on Linux.** Only headless RoonServer and RoonBridge. That is
+why this is worth building — and it is also why the setup wizard has to tell the
+user to approve the extension from their phone.
+
+## Architecture
+
+    Quickshell QML  ──HTTP+WS──▶  omarchy-roond  ──MOO/WS──▶  Roon Core
+          │                        (systemd --user)                 │
+          └──────────── HTTP, /api/image/{key} ────────────────────┘
+
+                        RoonBridge (systemd --user, as you)
+                              └──▶ plug:pipewire ──▶ DAC
+
+**Daemon is mandatory.** Discovery is SOOD over UDP broadcast, which QML cannot
+do; pairing needs a persisted token; zone state arrives as pushes on a long-lived
+subscription.
+
+**Python**, vendoring `roonapi` into the repo as owned source rather than
+depending on it — it has been quiet since 2023, and vendoring converts an
+unmaintained dependency into code we maintain. It already implements SOOD, MOO
+framing, token persistence, transport and browse. Choosing Python also lets
+`palette.py`, `lyrics.py`, `images.py` and `text.py` cross over from
+`omarchy-tidal` nearly verbatim.
+
+**Transport to QML** is HTTP + WebSocket on `127.0.0.1` — the same shape as
+`MopidyRpc.js` consuming Mopidy. WS carries zone state; HTTP carries browse and
+control.
+
+**Album art bypasses the daemon.** The Core serves images itself at
+`http://core:port/api/image/{key}?scale=fit&width=W&height=H&format=image/jpeg`,
+so QML's `Image` points straight at it and Qt's image cache does the work. The
+daemon fetches only a 16x16 thumbnail, for `palette.py`. This deletes an entire
+caching subsystem.
+
+**`RoonSession` is a narrow seam** — connect, subscribe, browse, load, control.
+Designed so a fake Core can drop in behind it later without a rewrite.
+
+## Local playback
+
+RoonBridge, installed with Roon's official self-updating installer, run **as your
+user** under a `--user` unit, targeting **`plug:pipewire`**.
+
+The failure everyone hits is that the official installer runs RoonBridge as root,
+and root cannot reach a per-user PipeWire session. Running it as you fixes that.
+`plug:` rather than `default:` because PipeWire's default device answers ALSA
+device probing incorrectly.
+
+`aur/roonbridge` is rejected: it sat at 2.60.1501 while `aur/roonserver` was at
+2.71.1683, and a Core will not play to an out-of-date endpoint.
+
+Exclusive ALSA is a documented manual escape hatch, **not a shipped toggle**. It
+is bit-perfect and it silently kills the cava visualiser and all system sound. One
+well-lit path beats two half-tested ones.
+
+## Zones, volume and keys
+
+**One pinned zone**, defaulting to the local one, switchable from the quick menu.
+Not "whichever zone is playing" — that is chaos in a shared house.
+
+**Volume is per-`Output`, not per-zone.** A grouped zone has N outputs with
+different volume systems (dB vs 0-100 vs `incremental`, the last having no value,
+min or max at all). The overlay therefore shows **per-output rows**, plus a group
++/- that fans `relative_step` out to every output. There is no synthetic absolute
+group fader: averaging a dB control against a linear one is the slick thing that
+is also the lying thing.
+
+Confirmed against the live Core, with two things the JSDoc does not mention:
+
+- **`hard_limit_min` / `hard_limit_max` / `soft_limit` are real fields.** The
+  Workshop output reports `min:0 max:100` but `hard_limit_max:50, soft_limit:50` --
+  a deliberately volume-limited zone. A slider drawn from `min`/`max` alone would
+  let the user push it to 100 and have the Core refuse. **Clamp to `soft_limit`.**
+- **An output can have no `volume` object at all.** `Network Streamer` has none.
+  This was predicted; it is now observed. Render those with no fader rather than a
+  disabled one.
+
+Outputs also carry `can_group_with_output_ids`, so the grouping affordance is
+available whenever v1's fence comes down.
+
+**`source_controls[].status == "standby"` does not mean the device is asleep.**
+The network streamer reports standby permanently, including while playing audible music,
+and never exposes a volume object at all. So: the zone's own `state` is the sole
+authority on playback, standby is at most a dim hint on the zone row, and it must
+never disable a control or tell the user the device is off. An earlier draft of
+this document had that exactly backwards.
+
+**Media keys go to PipeWire**, with the local Roon zone pinned to fixed. Two
+independent faders for one sound means whichever the keys don't touch becomes a
+liar; this keeps the Omarchy OSD honest. Cross-room volume lives in the overlay.
+
+**MPRIS exports the pinned zone.** `XF86AudioPlay` can therefore pause a speaker
+in another room. That is correct under a pinned-zone model and it is why the bar
+widget must always name the zone.
+
+    SUPER+M         overlay
+    SUPER+SHIFT+M   lyrics
+    SUPER+ALT+M     zones
+    SUPER+CTRL+M    Roon Radio toggle
+
+## Screens
+
+**First-class:** Now Playing (ported `NowPlayingView`, `SeekBar`, `TiltFrame`,
+theme washes via `palette.py`) · Zones · Queue (`subscribe_queue` + 
+`play_from_here`) · Search · a tiled landing page of library roots plus Recently
+Played and a Roon Radio toggle.
+
+**Generic browse** for everything below a library root.
+
+The landing page is the closest honest analogue to Tidal's personalised home that
+the API can feed. The browse tree is the substrate; hand-built screens are entry
+points into it, never a reconstruction of it.
+
+**Search is a conversation, not a query.** Browse returns an item carrying
+`input_prompt`; you re-browse with `opts.input`; then you load. Two round trips
+minimum, no typeahead. Debounce ~350ms and run it on a dedicated
+`multi_session_key`.
+
+**Browse sessions are stateful.** The Core holds one cursor per session. Any two
+surfaces browsing at once need distinct `multi_session_key`s or they will yank
+each other around. Search is the case that forces this.
+
+**Seek** interpolates locally off a monotonic clock, resyncs hard on every
+`zones_seek_changed` (~1Hz), freezes on pause. `Service.qml` owns `position`, as
+it does today.
+
+**Queue** subscribes once at 100 items per pinned zone, re-subscribing only on
+zone change.
+
+## Resilience
+
+Pin the Core by **Core ID, never IP** — pairing tokens are per-Core, and Roon's
+approval gate means an unpinned Core is an unapproved one.
+
+- SOOD discovery runs continuously in the background, so an IP change is absorbed
+  silently.
+- Prefer a Core on `localhost` when one is found there. A *different* Core
+  answering is ignored, never adopted — on a flat network, auto-adopt eventually
+  connects you to a neighbour's Core.
+- Tolerate the 30-120s a freshly-booted RoonServer takes to answer.
+- Backoff 1s to a 30s cap. `Restart=always`, `After=network-online.target`.
+- **The UI never goes blank.** Last-known zone state stays rendered, desaturated,
+  with a reconnecting indicator. A Core rebooting should look like a pause, not a
+  crash.
+
+### Discovery: three tiers, because multicast is not reliable
+
+Verified against the development Core (`the Core`, Roon 2.70 build 1671).
+
+**Tier 1 -- standard SOOD.** Multicast to 239.255.90.90:9003 plus per-interface
+broadcast, exactly as `sood.js` does: a recv socket on 9003 with membership
+joined, and a send socket bound to the interface IP that *also listens*, because
+the Core answers to the query's source port rather than to 9003. Fast and correct
+when the network cooperates.
+
+**Tier 2 -- unicast SOOD sweep.** When tier 1 finds nothing, send the same SOOD
+query unicast to every host on the local /24 at port 9003. The development Core
+**answers unicast perfectly while ignoring multicast and broadcast entirely** --
+the signature of a Core in a bridge-networked container, which is how Roon is
+commonly run on a NAS.
+
+This is a much better fallback than asking the user to type an address, because
+the reply is a real SOOD payload carrying everything needed to connect:
+
+    name             the Core
+    unique_id        00000000-0000-0000-0000-000000000000
+    http_port        9330
+    tcp_port         9150
+    service_id       00720724-5143-4a9b-abac-0e50cba674bb
+
+So a containerised Core is discovered automatically, with no user configuration
+and no manual port entry.
+
+**Every query needs a fresh `_tid`** -- see "Solved" below; a repeated tid is
+answered with silence, which is what made an early blind sweep look like an empty
+network.
+
+**The sweep is targeted rather than blind.** TCP-prescan the subnet for hosts with
+9330, 9200 or 9100 open, then unicast-query only those, in parallel. On the
+development network that is 3 candidates out of 254, and the whole of tier 2
+completes in under 2s. A handful of aimed probes beats 254 blind datagrams even
+now that the blind version would work.
+
+**Tier 3 -- manual host entry.** For Cores on another subnet or behind a router.
+Ask for a host only: once the host is known, a unicast SOOD query supplies the
+port, so the user is never asked for one. `ws_connect({host, port})` is the
+officially supported path (`lib.js:429`).
+
+**Firewall.** Omarchy ships `ufw` enabled with `DEFAULT_INPUT_POLICY="DROP"`.
+Tier 2 works regardless, because the reply returns on an established unicast flow
+that conntrack permits. Tier 1 does **not**: a reply to a multicast or broadcast
+query matches no flow and is dropped. So the wizard should offer
+
+    sudo ufw allow 9003/udp comment 'Roon discovery (SOOD)'
+
+as an optimisation that makes tier 1 work, never as a preconditon for finding a
+Core at all.
+
+## Spike results
+
+### The MOO stack is proven end to end
+
+`spikes/core-handshake.py` opens a WebSocket to `ws://192.0.2.10:9330/api`,
+hand-rolls RFC 6455 client framing and sends `com.roonlabs.registry:1/info` --
+the one call a Core answers before any pairing or approval:
+
+    MOO/1 COMPLETE Success
+      core_id           00000000-0000-0000-0000-000000000000
+      display_name      the Core
+      display_version   2.70 (build 1671) production
+
+Transport, MOO framing and the Core are all healthy. Nothing in the architecture
+is blocked.
+
+### Discovery: diagnosed
+
+`spikes/sood-discovery.py` now mirrors `sood.js` faithfully -- per-interface send
+socket bound to the interface IP with `IP_MULTICAST_IF` and TTL 1, listening on
+both that socket and 9003, membership joined. Multicast and broadcast still get
+nothing.
+
+A unicast SOOD query to the Core's address gets a full, correct reply. **The
+Core's SOOD service is healthy; only multicast and broadcast delivery to it is
+broken.** Hence the three-tier ladder above, with the unicast sweep as the tier
+that actually makes this work in the common Docker deployment.
+
+### Two hypotheses that were wrong, and why
+
+**"The API port is unpublished."** An early sweep found no MOO endpoint and blamed
+container networking. Wrong: 9330 returned `503` because the Core was mid-restart.
+The API is reachable, on the same port that serves the Display web app.
+
+**"The firewall is the cause."** `ufw` does drop broadcast and multicast replies,
+so it is *a* cause of tier 1 failing -- but adding the rule changed nothing,
+because the Core was never answering those queries in the first place. The
+firewall is a real issue for tier 1 and irrelevant to tier 2.
+
+Both were caught by continuing to test rather than accepting the first plausible
+story. The lesson worth keeping: **a negative result from your own probe is not
+evidence until the probe is verified against the reference implementation.** Two
+of the three failures here were bugs in the probe, not in the network.
+
+### Solved: the Core deduplicates SOOD queries by `_tid`
+
+The mystery -- a single unicast query answered reliably, the same query inside a
+sweep answered never -- was ours, not the network's.
+
+`sood.js:84` assigns `msg['_tid'] = uuid.v4()` when the caller omits one. That is
+not decoration. **The Core answers the first query it sees for a given `_tid` and
+ignores every repeat.** Both spikes reused a constant tid, so the first query of a
+process worked and every one after it looked like "no Core on the network" -- and
+a 254-address sweep sending one identical datagram per host is 254 duplicates.
+
+Fixed by generating a fresh UUID per datagram in `discovery.query_message()`.
+Discovery now finds the Core repeatably, through all three tiers.
+
+The reference had told us, in a line we read and did not act on. Worth
+remembering: when reimplementing a protocol, the incidental-looking lines are
+often the protocol.
+
+### Notifications
+
+One replaceable notification per category, so alerts never stack and recovery
+*replaces* the failure. Toggleable in Settings beside "Announce each track".
+
+| Event | Notify |
+|---|---|
+| Core unreachable > 10s | yes |
+| Core recovered | yes, replaces the alert, 5s expiry |
+| Reconnect under 10s | **no** — blips must stay silent or the alert gets ignored |
+| RoonBridge down / local zone vanished | yes, distinct from Core loss, different fix |
+| Extension approval revoked | yes, actionable and otherwise invisible |
+| Remote zone start/stop, pause | no |
+
+## Protocol gotchas, learned the hard way
+
+**WebSocket messages are fragmented, and the zone payload always is.** The Core
+sends a first frame with FIN=0 and the real opcode, then continuation frames
+(opcode `0x0`) until FIN=1. A reader that treats each frame as a message gets
+truncated JSON and **silently loses every zone update** -- browse still works
+perfectly, so the bug looks like "transport is broken" rather than "framing is
+broken". Reassemble on FIN.
+
+**Subscriptions answer `Subscribed`, not `Success`.** `subscribe_zones` replies
+`MOO/1 CONTINUE Subscribed`; filtering responses on `Success` drops it.
+
+**Registration is `CONTINUE`, not `COMPLETE`.** `registry:1/register` returns
+`MOO/1 CONTINUE Registered` and the request stays open, so the registry can push
+further messages down it. Do not treat registration as one-shot.
+
+**The saved token makes reconnection silent.** Re-registering with the stored
+token returns `Registered` immediately with no approval prompt, which is what
+makes `Restart=always` on the daemon acceptable.
+
+## Setup wizard
+
+Five rungs, each with a cause line, in the shape `omarchy-tidal-setup` already
+has:
+
+0. **Discovery reachable** -- `ufw` allows inbound UDP 9003, or the user has
+   entered a host and port manually
+1. Core found
+2. Paired
+3. **Extension approved in Roon Settings > Extensions**
+4. RoonBridge running
+5. Zone visible to the Core
+
+Rung 0 is new, and it exists because the default Omarchy firewall breaks Roon
+discovery silently. "No Core found" is the single most likely first-run outcome,
+and it must never be a dead end: offer the `ufw` rule, and offer manual host+port
+entry beside it.
+
+Rung 3 is **blocking, with live polling**, and the wizard says out loud: open Roon
+on your phone or another computer. It is the most confusing moment in the whole
+product — a user with no Roon app on any device is stuck, and the wizard must say
+so rather than showing a red tick and letting them hunt.
+
+## Bar widget
+
+Names the zone, always. Five distinct states: pinned playing · pinned idle ·
+**pinned idle while another zone plays** (dim `> Lounge` hint, tap to re-pin) ·
+Core unreachable · RoonBridge down. The last two must not look like idle, or every
+support thread opens with "the widget just isn't there".
+
+Manifest schema: `showZoneName`, `showLabel`, `maxLabelWidth`, `scrollLongLabels`,
+`showOutputFormat`. `favorite` and `showQualityBadge` are deleted.
+
+## Testing
+
+Record real payloads from a live Core and commit them as fixtures; drive the
+daemon's state machine against them offline. That covers what actually breaks:
+parsing `three_line`, browse paging, `zones_seek_changed` merge logic, incremental
+volume. Pure modules keep the `tests/_backend.py` load-from-disk pattern.
+
+A full fake Core is a project of its own. `RoonSession` is shaped so one can be
+added later; it has to earn it first.
+
+## The daemon, as built
+
+`backend/omarchy_roond/`, stdlib only:
+
+| Module | Responsibility |
+|---|---|
+| `moo.py` | WebSocket + MOO framing, fragment reassembly, ping/pong |
+| `discovery.py` | the three tiers, fresh `_tid` per query, targeted prescan |
+| `text.py` | `three_line` parsing, volume bounds, standby -- pure, fixture-tested |
+| `zones.py` | `ZoneStore`: the Subscribed/Changed/seek merge -- pure, fixture-tested |
+| `session.py` | `RoonSession`: connect, register, subscribe, control, browse, reconnect |
+| `wire.py` | server-side WebSocket framing (the other half of `moo.py`) |
+| `server.py` | the local API: HTTP for calls, one WebSocket for pushes |
+| `__main__.py` | `--serve` to run the daemon; otherwise an end-to-end exercise |
+
+### The local API
+
+`http://127.0.0.1:9821`, bound to loopback and unauthenticated -- the same
+bargain Mopidy's HTTP frontend makes, and nothing here is reachable off-machine.
+
+| Route | |
+|---|---|
+| `GET /health` | liveness, connection state, zone and client counts |
+| `GET /state` | full snapshot: core, `image_base`, every zone |
+| `GET /zones`, `GET /zones/<id>` | zone summaries |
+| `POST /control` | `{zone_id, action}` |
+| `POST /seek` | `{zone_id, seconds, how}` |
+| `POST /volume` | `{output_id, value, how}` |
+| `POST /settings` | `{zone_id, shuffle?, loop?, auto_radio?}` |
+| `POST /browse`, `POST /load` | the browse tree, options passed through |
+| `WS /ws` | `state` on connect, then `zones` / `connected` / `disconnected` / `awaiting_approval` |
+
+Two deliberate absences. **There is no art route**: `/state` publishes
+`image_base` and QML points `Image` straight at the Core, which is measurably
+real -- a 300x300 JPEG comes back from `/api/image/<key>` in 35KB with no daemon
+in the path. And **clients never send anything over the WebSocket**; it is push
+only, because everything a client wants to say is a call with a reply and belongs
+on HTTP.
+
+Writes answer `503` while disconnected but reads keep working, so the interface
+can always render its disconnected state instead of going blank.
+
+**No `roonapi` after all.** The plan was to vendor it; writing the client turned
+out to be less code than vendoring and adapting one would have been, and it leaves
+the daemon with no third-party dependency at all. The seam is the same either way.
+
+**`AwaitingApproval` is its own exception**, because an unapproved extension does
+not fail -- registration simply never answers. Reporting that silence as a
+connection error sends the user hunting for a network fault instead of opening
+Roon on their phone. The reconnect loop polls every 3s while in that state,
+because a human is acting right then.
+
+### Proven end to end against a live Core
+
+Discovery through all three tiers; register; silent reconnect with a stored token;
+7 zones with correct `soft_limit` clamping (Workshop reads `0-50`, limited from 100)
+and standby detection (network streamer, no volume object); browse across every hierarchy;
+`control` returning `Success` with the state transition observed; and seek ticks
+arriving at 1Hz. Confirmed audibly on the local endpoint, and again on a network streamer in another
+office -- which is how the standby misreading above was caught.
+
+## Testing
+
+Three layers, because they catch different things and cost different amounts.
+
+**Unit** -- pure functions, no sockets: `three_line` parsing, volume bounds and
+`soft_limit` clamping, standby, the zone merge, and WebSocket framing checked
+against RFC 6455's own worked example. Milliseconds.
+
+**Integration** -- a real `ApiServer` on a real socket, driven over real HTTP and
+a real WebSocket handshake, with a fake session in place of a Core. Covers
+routing, error mapping (`400` vs `503` vs `502`, never `500`), the push fan-out,
+and a client that vanishes mid-broadcast without stalling the Roon read loop.
+This is what the narrow seam bought: five verbs is a cheap thing to double.
+
+**Live** -- `tests/test_live.py`, skipped unless `ROON_LIVE_HOST` is set. The only
+layer that can catch Roon changing something, so it exists; read-only, so it never
+starts playback in anyone's house. It pins the `_tid` regression explicitly, since
+that failure looks exactly like an empty network.
+
+    ROON_LIVE_HOST=192.0.2.10 pytest tests/test_live.py
+
+**Fixture guard** -- `scripts/check-fixtures.py`. Tests running against a
+malformed fixture can pass against nonsense, so CI checks the shapes the daemon
+depends on: that some zone has `now_playing.three_line`, that some output has a
+`volume` and some output has none, that some output carries `soft_limit`. Without
+those, three of the tests prove nothing while still passing.
+
+**CI** -- `.github/workflows/ci.yml`: ruff on one job, pytest across 3.12 and 3.13
+on another, the fixture guard on a third, JUnit XML uploaded. No dependency
+install step beyond pytest, because the daemon has no runtime dependencies.
+
+## Fixtures
+
+Captured from the live Core by `spikes/capture-fixtures.py`, which reconnects
+with the saved token and writes `spikes/fixtures/*.json`:
+
+| Fixture | What it pins down |
+|---|---|
+| `zones.json` | 7 zones, `three_line` shapes, per-zone `settings`, queue counters |
+| `outputs.json` | volume systems, `soft_limit`, an output with no volume at all |
+| `queue.json` | 11 queue items with `three_line` and `queue_item_id` |
+| `browse-browse.json` | the `Explore` root: Library, Playlists, My Live Radio, Genres, TIDAL, Settings |
+| `browse-albums.json` | 2589 albums; `subtitle` carries the artist |
+| `browse-artists.json` | 866 artists; `subtitle` carries "N Albums" |
+| `browse-genres.json` | 21 genres; `subtitle` carries "N Artists, M Albums" |
+| `browse-playlists.json` | 16 playlists; `subtitle` carries "N Tracks" |
+
+The `subtitle` conventions matter: they are what makes the tiled landing page
+readable without a metadata API. Every list gives a usable second line for free.
+
+`.roon-token.json` is gitignored -- it is a credential for the Core.
+
+## Status
+
+**R1 is running on this machine.** RoonBridge installed as `you` under a
+`--user` unit, routed through `plug:pipewire`, appearing in Roon as
+`Studio (Omarchy)` and playing. The daemon runs as its own `--user` unit,
+publishes MPRIS, and Omarchy's Media bar widget picks it up. `doctor` is all
+green.
+
+Both units are installed by `bin/omarchy-roon-endpoint`: `install`, `firewall`,
+`pipewire`, `daemon`.
+
+## Releases
+
+**R1 -- endpoint + bar widget.** This machine becomes a selectable Roon zone, and
+a bar widget shows what is playing on it with basic transport. Everything is
+driven from a phone or another Roon control device; there is no browsing UI here
+yet. That is a genuinely useful product on day one: Roon ships no Linux endpoint
+UI at all, and the hard part -- being an endpoint -- is a wrapper, not a rewrite.
+
+**R2 -- the full client.** Now Playing, Zones, Queue, Search, browse, lyrics. The
+daemon already serves all of it.
+
+## The bar widget
+
+A **tray-sized icon in the right cluster**, next to Audio, that opens a mini
+player on click. Not an inline label: an endpoint is something you glance at and
+occasionally poke, not a running commentary that shoves the clock sideways every
+few minutes. The glyph carries the state -- playing, idle, daemon down -- and
+everything else is one click away.
+
+Built on the shell's `Panel` base rather than `BarWidget`, because that is the
+shell's own pattern for "icon in the cluster that opens something": Bluetooth,
+Network, Audio and Display are all Panels, and inheriting it gets the popup's
+anchoring, keyboard handling and popout-switching for free.
+
+The mini player holds: sleeve and track, the **zone name and state**, transport,
+a volume slider, the zone list with the pinned one marked (click to re-pin), and
+the announce-each-track toggle.
+
+**IPC ownership.** `Panel` normally registers its own handler, but the service
+already owns the `roon` target -- and a service is a singleton where a bar widget
+is instantiated once per monitor, and a target permits only one handler. So the
+panel sets `manageIpc: false` and listens for a `toggleRequested` signal on the
+service instead. `omarchy-shell roon player` opens it.
+
+### The icon
+
+A **level meter**: four bars that rise and fall while music plays and settle into
+a static waveform when it does not, struck through when the daemon is down.
+Motion is the honest way to say "sound is coming out of this machine right now",
+which is the one thing a glance at an endpoint wants to know.
+
+Two earlier attempts were worse. A Nerd Font glyph was unreadable next to the
+speaker and monitor either side of it. A "Roon signal path" mark -- source,
+transport, endpoint -- was conceptually neat and visually weak at 16px.
+
+**Never name a property `x`, `y`, `width`, `height` or `scale` in a QML
+component.** They are FINAL on `QQuickItem`, and shadowing one makes the entire
+widget fail to load with nothing in the journal but
+`Cannot override FINAL property` -- no icon, no error on screen, and the rest of
+the bar carries on as though the widget were simply not configured.
+
+### The icon (earlier note)
+
+Drawn in QML rather than shipped as an SVG, so it follows the theme with no
+colour-overlay shader: a rounded app tile with a lowercase "r", **filled while
+playing and outlined while idle** -- the same filled/outline language the rest of
+the bar uses for state. Daemon down draws a slash instead.
+
+A Nerd Font glyph was the first attempt and was wrong: the widgets either side
+are already a speaker and a monitor, so a third generic media glyph is
+unreadable at a glance, and none of them say *Roon*. Roon's own wordmark is
+lowercase, and an "r" is the most detail that survives at bar size.
+
+### The quality badge, which turned out to be possible after all
+
+Round three of the design concluded the badge was dead: Roon's extension API
+exposes no sample rate, bit depth, codec or signal path, and that is still true.
+The conclusion was wrong because it only considered the *controller* half of what
+this is. **This machine is also the endpoint**, and RAATServer -- running right
+here -- is told precisely what to play:
+
+    {"request":"setup","format":{"sample_type":"pcm","sample_rate":96000,
+                                 "bits_per_sample":24,"channels":2}}
+    alsa output setup: format is pcm 96000/24/2
+
+`endpoint.py` reads that back from the log, tailing only the last 256 KB and
+re-parsing solely when the mtime moves. The badge shows only when the pinned zone
+is this machine, because another room is played by hardware this one knows
+nothing about.
+
+**There is still no file format, and there cannot be.** RAAT decodes on the Core
+and streams PCM; FLAC, ALAC and AAC are resolved long before the endpoint sees
+anything. So the badge reads `PCM 24/96` -- which is exactly how Roon words this
+node of its own signal path -- and `DSD64` by its multiple of the CD rate.
+
+### Gapless, confirmed rather than assumed
+
+64 stream starts against 9 device setups on a real session, with every setup
+lining up with a format change rather than a track change. Consecutive same-format
+tracks stream through without the ALSA device being reconfigured. It is RAAT and
+the Core doing it; nothing in this stack participates. A rate or depth change does
+reconfigure the device, which is a genuine gap and what Roon's resync delay exists
+for.
+
+### The visualiser and the record's own colour
+
+`palette.py` came across from omarchy-tidal **unchanged** -- the only module that
+did -- because it depends on nothing but image bytes, and Roon serves those from
+the Core exactly as TIDAL did. Exposed as `GET /palette/<image_key>`, cached per
+key, and driven from MPRIS's `artUrl` so it lands the instant the track changes
+rather than four seconds later on the state poll. A monochrome cover honestly
+reports no colour, and the panel falls back to the theme accent rather than
+tinting everything a washed-out grey.
+
+`bin/omarchy-roon-cava` and `Visualizer.qml` came across too. cava taps
+PipeWire's **default sink monitor** -- the same signal reaching the DAC -- so it
+follows whatever is audible. **This only works because the bridge is routed
+through `plug:pipewire`**; an exclusive-mode bridge would draw a flat line. A
+decision made for system-sound coexistence turned out to be the one that made a
+real spectrum analyser possible.
+
+The timeline, the volume fill and the play button all take the sleeve's colour,
+so the player belongs to the album rather than to the chrome.
+
+### The zone picker is deliberately quiet
+
+Roon's own apps keep it as a speaker and a name at the foot of the player, not a
+form control. A full-width dropdown made choosing a room look like the main thing
+you came to do, when almost always you came to press pause. It is a muted line
+that expands in place, and collapses again when the panel closes.
+
+### Notifications are suppressed while the panel is open
+
+A card announcing the track, drawn on top of the player already showing the
+track, is pure duplication -- and on a right-cluster panel it lands directly over
+it. The panel sets a **transient** `suppress` flag (never persisted, so it cannot
+leave announcements off for good) while it is open.
+
+The subtlety: suppression still updates the notifier's bookkeeping, so closing
+the panel does not then announce a track that changed while it was open. The user
+watched that change happen; announcing it afterwards is stale.
+
+### A gotcha that costs an hour if you hit it cold
+
+**`Ui/Panel` is a bare `Item` with no size of its own**, and the bar sizes every
+slot from `implicitWidth`. A Panel-based widget that does not set
+
+    implicitWidth: button.implicitWidth
+    implicitHeight: button.implicitHeight
+
+occupies **zero pixels**: it is present in the layout, loads without a single
+warning, answers IPC correctly -- and is invisible and unclickable. Nothing in
+the logs says so. Every first-party Panel sets those two lines; `BarWidget`-based
+widgets do not need them, which is exactly why it is easy to miss when moving
+from one base to the other.
+
+Related: `dimmed` on a `WidgetButton` lowers opacity far enough on some themes to
+read as "not there". The glyph already distinguishes playing from idle, so it is
+not worth the ambiguity.
+
+### The original inline-label version
+
+`manifest.json` + `qml/`, plugin id `quickshell.roon`, kinds `service` and
+`bar-widget`. Enabled with `omarchy plugin enable quickshell.roon`, which places
+it in the bar automatically.
+
+**Why a dedicated widget when Omarchy ships a generic MPRIS one.** Two reasons,
+both discovered rather than assumed:
+
+1. `omarchy.media` selects among *every* player on the bus and offers cycling
+   between them. With `mopidy` and `playerctld` also present there is no
+   guarantee it is showing Roon. This widget binds to
+   `org.mpris.MediaPlayer2.omarchy_roon` **specifically** -- the same trick the
+   TIDAL plugin uses to pin itself to mopidy.
+2. MPRIS has no vocabulary for rooms, so a generic widget cannot tell you *which
+   zone* it is showing. Since the media keys act on that room from this keyboard,
+   the zone name is not decoration.
+
+**Two sources, chosen for what each is good at.** MPRIS carries track, art and
+play state -- push-based over D-Bus, instant, free. The daemon's HTTP API is
+polled every 4s for what MPRIS cannot express: the zone name, the zone list, and
+pinning. **Quickshell ships no WebSocket module and `qt6-websockets` is not
+installed**, so the daemon's `/ws` is unreachable from QML -- which matters less
+than it sounds, because everything time-sensitive already arrives over MPRIS.
+
+The widget never hides. An idle endpoint is still worth seeing, because someone
+may start playing to it from a phone at any moment; collapsing to nothing would
+make it look broken exactly when it is working and waiting.
+
+Click plays/pauses, scroll skips, middle click cycles zones. IPC:
+`omarchy-shell roon status|zone|playpause|next|previous|notifications|refresh`.
+
+## Track notifications
+
+`backend/omarchy_roond/notify.py`. The record goes on screen as playback moves
+on, through the desktop's own notification daemon, each one replacing the last
+rather than stacking a card per song.
+
+The guards are the feature. Announce on every zone push and you get one card per
+second while music plays, one on every pause, and one for whatever happened to be
+playing when the daemon started -- which is the difference between something
+people keep and something they turn off. So: never on the first update, only on
+an actual track change, only while playing. Toggle with `POST /notifications`.
+
+Art has to be a local file -- notification daemons do not fetch `http://` for
+`image-path` -- so the sleeve is cached to `~/.cache/omarchy-roon/art` first, and
+the notification goes out without art rather than late if that fails.
+
+## MPRIS: what the surfaces are built on
+
+Omarchy 4 ships `omarchy.media` -- a **generic MPRIS bar widget** with
+now-playing and transport -- and the shell already routes media keys and the
+volume OSD through MPRIS. So publishing one MPRIS player gives the endpoint a
+bar presence, working media keys and an OSD **without a line of QML**. R1 needs
+no plugin and no app.
+
+`backend/omarchy_roond/mpris.py`, bus name
+`org.mpris.MediaPlayer2.omarchy_roon`. Needs `python-gobject`, already a pacman
+package and already a dependency wherever the TIDAL backend runs; if it is
+missing the daemon says so and carries on without a bar presence rather than
+refusing to start.
+
+Four seams worth naming:
+
+* **MPRIS is one player; Roon is many zones.** The pinned zone stands in for
+  "this machine's music". There is no MPRIS vocabulary for rooms, so the zone
+  name rides in `Identity` -- the bus reads `Roon — Lounge`. A client cannot
+  *switch* zones through MPRIS, which is the one thing a dedicated bar widget
+  would add later, if it ever earns its place.
+* **Roon has no track ids.** `mpris:trackid` must be an object path that changes
+  with the track or clients will not notice a new song, so it is synthesised from
+  a counter keyed on title/artist/album.
+* **Art is a plain Core URL**, which is exactly what `mpris:artUrl` wants -- no
+  proxy, no temp files.
+* **Position is polled by clients but pushed by Roon at ~1Hz.** Interpolating
+  from a monotonic anchor between ticks is what makes a progress bar move rather
+  than step.
+
+Verified on the live bus: every property readable, metadata complete with a Core
+art URL, and `playerctl` lists it alongside mopidy.
+
+### The pinned zone
+
+One zone stands for this machine. The default is the zone this machine plays to,
+found by matching the hostname against zone and output names (RoonBridge names
+its outputs after the host); failing that, the first zone. An explicit pin is
+persisted to `config.json` and exposed as `POST /pin`.
+
+Following whichever zone happens to be playing was rejected: the bar widget would
+change rooms under you whenever someone elsewhere in the house pressed play.
+
+## The endpoint
+
+`bin/omarchy-roon-endpoint` -- `doctor` (default, read-only), `install`,
+`firewall`, `start`/`stop`/`restart`/`logs`, `uninstall`.
+
+**It wraps `aur/roonbridge`; it does not reimplement it.** The package already
+downloads and packages Roon's binaries and pacman tracks them. Writing another
+downloader would duplicate that for nothing.
+
+What the package does *not* do, and nothing else does either, is the three things
+this script exists for:
+
+1. **Run RoonBridge as you, not root.** The packaged unit is `User=root`, and root
+   cannot reach a per-user PipeWire session -- so a root bridge can only take a
+   raw ALSA device exclusively, silencing system audio and the visualiser. We
+   disable and mask the packaged unit and install a `--user` one instead.
+2. **Point RAATServer at `plug:pipewire`**, not `default`. PipeWire's default
+   device answers ALSA hardware probing incorrectly; the plug layer wraps it so
+   probing succeeds.
+3. **Open the ports RAAT needs** -- `9200/tcp`, `30000-65535/tcp`, and critically
+   **`30000-65535/udp` for clock sync**. Miss the UDP range and streams die about
+   a second in, silently, presenting as random track skipping rather than as a
+   firewall problem. Omarchy ships `ufw` default-deny, so every user hits this.
+
+One more thing the packaging gets wrong for our purposes: **`/opt/RoonBridge` must
+be writable by the user running it.** RoonBridge self-updates by unpacking into
+its own directory (`start.sh --update`), and root ownership makes that fail
+silently until the Core refuses an out-of-date endpoint. `install` takes
+ownership; `doctor` re-checks it, because a pacman upgrade resets it.
+
+### Three bugs worth remembering
+
+**Falsy zero in a dB volume.** `volume.get("value") or minimum` looks harmless
+until a dB control sits at **0 dB, which is full volume and is falsy**, so the
+default fires on exactly the value meaning "loudest" and MPRIS reports silence.
+Caught only because the real endpoint reported `Volume 0` while audibly playing.
+Pinned by a regression test.
+
+
+**PyGObject's D-Bus vtable arity.** `register_object`'s get-property callback
+takes `(conn, sender, path, iface, prop)` -- no trailing `GError`, unlike the C
+API. Get it wrong and it fails in the most misleading way available: the bus name
+is claimed, introspection is perfect, and *every* property read returns "Unable
+to retrieve property".
+
+**A throw after the WebSocket handshake hangs the client forever.** The 101 has
+already gone out, so a client that then gets neither a frame nor a close just
+waits -- a hung UI with no error anywhere. Any failure building the initial
+snapshot now sends a close frame and drops the connection.
+
+### A correction
+
+An earlier draft rejected `aur/roonbridge` as dangerously stale, comparing its
+2.60.1501 against the Core's 2.71. That was wrong. Roon's own *production*
+download is **also 2.60 (build 1501)** -- 2.60 is the bootstrap, and `start.sh`
+has an `--update` path because the bridge updates itself from the Core after
+first contact. The package is current. The reason to bypass its systemd unit is
+root-versus-user, not staleness.
+
+## v1 fence
+
+**Ships:** Now Playing, Zones, Queue, Search, library-roots landing page, generic
+browse, lyrics, MPRIS, bar widget, setup wizard.
+
+**Does not ship:** zone grouping/ungrouping, transfer-zone, Internet Radio,
+Composers/Tags/Bookmarks, the `settings` hierarchy, multi-Core, History.
+
+Grouping and transfer-zone are a few API calls each; the UI for "which outputs, in
+what order, whose queue survives" is where the time goes.
+
+## What dies coming from omarchy-tidal
+
+| Feature | Fate |
+|---|---|
+| Quality badge (24/192) | **Dead as designed.** Roon exposes no format data. Reborn as an *output* badge read from PipeWire at the sink — more honest than the source-tier badge ever was, local zone only |
+| Personalised home page | **Dead.** No metadata API. Replaced by the library-roots landing page |
+| Artist / album pages | **Dead as bespoke screens.** Roon's browse tree renders them |
+| Favourite (`SUPER+ALT+M`) | **Dead.** No API — favouriting lives in browse action lists, unreachable from `now_playing`. Key repurposed to Zones |
+| Structured metadata | **Gone.** `three_line.line1/2/3` and a convention |
+| Lyrics | Survives, degraded. No track IDs, so fuzzy match on artist + title with a +/-2s duration gate. Empty beats wrong |
+| Cava visualiser | Survives **only** because of the PipeWire routing choice |
+| `palette.py`, `Design.js`, chrome, wizard machinery | Survive intact — the real inheritance |
+
+Gained in exchange: multi-zone, a real queue, per-output volume, Roon Radio, and
+Roon's own metadata quality.
+
+## Prior art on Linux
+
+Worth reading before building. `roon-tui`, `roon-cli`, `roon-kit`,
+`roon-mpris-multizone-git` (multi-zone MPRIS via media keys),
+`roon-now-playing-git` (a waybar module), and `roon-proton` — the official Windows
+Roon app under Proton/umu-launcher on XWayland, actively maintained. That last one
+is the honest measure of demand: people will run Windows in a compatibility layer
+to get a real Roon GUI. It is not a competitor on native shell integration, but it
+proves the appetite.
+
+## Spike results
+
+### The MOO stack is proven end to end
+
+`spikes/core-handshake.py` opens a WebSocket to `ws://192.0.2.10:9330/api`,
+hand-rolls RFC 6455 client framing and sends `com.roonlabs.registry:1/info` --
+the one call a Core answers before any pairing or approval. It came back:
+
+    MOO/1 COMPLETE Success
+      core_id           00000000-0000-0000-0000-000000000000
+      display_name      the Core
+      display_version   2.70 (build 1671) production
+
+Transport, MOO framing and the Core are all healthy. Nothing in the architecture
+above is blocked.
+
+**The API port on this Core is 9330 -- the same port that serves the Display web
+app.** `node-roon-api` always reads `http_port` from the SOOD reply, so this is
+not guaranteed, but 9330 is the right first guess for manual entry and for a LAN
+sweep, before falling back to probing every open port for a WebSocket upgrade at
+`/api`.
+
+### Discovery is still broken, and it is the firewall
+
+`spikes/sood-discovery.py` sends a SOOD query whose framing is verified byte-for-
+byte against `sood.js`, receives on port 9003 with multicast membership joined as
+the reference does, and sends to the multicast group plus every interface
+broadcast address. **No Core answers.**
+
+Cause: Omarchy ships `ufw` enabled with `DEFAULT_INPUT_POLICY="DROP"` and no rule
+for 9003, so the inbound reply is dropped before it arrives. Discovery cannot work
+on a default Omarchy install. This is a shipping-blocker for every user, not a
+quirk of this machine.
+
+### A hypothesis that was wrong
+
+An earlier sweep found no MOO endpoint on the Core and concluded the API port was
+unpublished by a bridge-networked container. That was wrong -- port 9330 returned
+`503` because the Core was mid-restart. The API is reachable. Container networking
+may still break *multicast* for Cores in Docker, which is a real reason to keep
+manual entry as a first-class path, but it is not this Core's problem.
+
+The value of the spike stands: it found the firewall blocker before a line of the
+daemon was written, and the wizard grew rung 0 as a result.

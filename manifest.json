@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "quickshell.roon",
+  "name": "Roon",
+  "version": "0.1.0",
+  "author": "ph0bos",
+  "description": "What is playing in your Roon zone, in the Omarchy bar. Endpoint playback, transport, and zone switching for a Roon Core on your network.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "qml/Service.qml",
+    "barWidget": "qml/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Roon",
+    "description": "Roon zone now-playing with transport controls",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaults": {
+      "showZoneName": true,
+      "showLabel": true,
+      "maxLabelWidth": 220,
+      "scrollLongLabels": true
+    },
+    "schema": [
+      { "key": "showLabel",        "type": "bool", "label": "Show track title" },
+      { "key": "showZoneName",     "type": "bool", "label": "Show zone name" },
+      { "key": "maxLabelWidth",    "type": "int",  "label": "Max label width (px)" },
+      { "key": "scrollLongLabels", "type": "bool", "label": "Scroll long titles" }
+    ]
+  },
+  "license": "MIT",
+  "repository": "https://github.com/ph0bos/omarchy-roon-client"
+}

@@ -1,0 +1,212 @@
+{
+  "outputs": [
+    {
+      "output_id": "17014aa8632ebc7f92440124ad62e6a47f11",
+      "zone_id": "16014aa8632ebc7f92440124ad62e6a47f11",
+      "can_group_with_output_ids": [
+        "17014aa8632ebc7f92440124ad62e6a47f11",
+        "17012609a04d15192c407c278d3203eaed0c",
+        "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+        "1701349efe8e2e5657adbb505b895551af92",
+        "170105e221a0d39571c0d1bd6a8c3d77ce01",
+        "170100c8dba47a97c963f04d6fe07d0cff8f"
+      ],
+      "display_name": "Lounge",
+      "volume": {
+        "type": "number",
+        "min": 0,
+        "max": 100,
+        "value": 45,
+        "step": 1,
+        "is_muted": false,
+        "hard_limit_min": 0,
+        "hard_limit_max": 100,
+        "soft_limit": 100
+      },
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Lounge",
+          "supports_standby": false,
+          "status": "indeterminate"
+        }
+      ]
+    },
+    {
+      "output_id": "170100c8dba47a97c963f04d6fe07d0cff8f",
+      "zone_id": "160100c8dba47a97c963f04d6fe07d0cff8f",
+      "can_group_with_output_ids": [
+        "17014aa8632ebc7f92440124ad62e6a47f11",
+        "17012609a04d15192c407c278d3203eaed0c",
+        "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+        "1701349efe8e2e5657adbb505b895551af92",
+        "170105e221a0d39571c0d1bd6a8c3d77ce01",
+        "170100c8dba47a97c963f04d6fe07d0cff8f"
+      ],
+      "display_name": "Study",
+      "volume": {
+        "type": "number",
+        "min": 0,
+        "max": 100,
+        "value": 2,
+        "step": 1,
+        "is_muted": false,
+        "hard_limit_min": 0,
+        "hard_limit_max": 100,
+        "soft_limit": 100
+      },
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Study",
+          "supports_standby": false,
+          "status": "indeterminate"
+        }
+      ]
+    },
+    {
+      "output_id": "1701349efe8e2e5657adbb505b895551af92",
+      "zone_id": "1601349efe8e2e5657adbb505b895551af92",
+      "can_group_with_output_ids": [
+        "17014aa8632ebc7f92440124ad62e6a47f11",
+        "17012609a04d15192c407c278d3203eaed0c",
+        "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+        "1701349efe8e2e5657adbb505b895551af92",
+        "170105e221a0d39571c0d1bd6a8c3d77ce01",
+        "170100c8dba47a97c963f04d6fe07d0cff8f"
+      ],
+      "display_name": "Loft",
+      "volume": {
+        "type": "number",
+        "min": 0,
+        "max": 100,
+        "value": 75,
+        "step": 1,
+        "is_muted": false,
+        "hard_limit_min": 0,
+        "hard_limit_max": 100,
+        "soft_limit": 100
+      },
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Loft",
+          "supports_standby": false,
+          "status": "indeterminate"
+        }
+      ]
+    },
+    {
+      "output_id": "17012609a04d15192c407c278d3203eaed0c",
+      "zone_id": "16012609a04d15192c407c278d3203eaed0c",
+      "can_group_with_output_ids": [
+        "17014aa8632ebc7f92440124ad62e6a47f11",
+        "17012609a04d15192c407c278d3203eaed0c",
+        "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+        "1701349efe8e2e5657adbb505b895551af92",
+        "170105e221a0d39571c0d1bd6a8c3d77ce01",
+        "170100c8dba47a97c963f04d6fe07d0cff8f"
+      ],
+      "display_name": "Conservatory",
+      "volume": {
+        "type": "number",
+        "min": 0,
+        "max": 100,
+        "value": 30,
+        "step": 1,
+        "is_muted": false,
+        "hard_limit_min": 0,
+        "hard_limit_max": 100,
+        "soft_limit": 100
+      },
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Conservatory",
+          "supports_standby": false,
+          "status": "indeterminate"
+        }
+      ]
+    },
+    {
+      "output_id": "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+      "zone_id": "16017b7d9a6b8d10fb0303e3ee4737c2fd77",
+      "can_group_with_output_ids": [
+        "17014aa8632ebc7f92440124ad62e6a47f11",
+        "17012609a04d15192c407c278d3203eaed0c",
+        "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+        "1701349efe8e2e5657adbb505b895551af92",
+        "170105e221a0d39571c0d1bd6a8c3d77ce01",
+        "170100c8dba47a97c963f04d6fe07d0cff8f"
+      ],
+      "display_name": "Workshop",
+      "volume": {
+        "type": "number",
+        "min": 0,
+        "max": 100,
+        "value": 47,
+        "step": 1,
+        "is_muted": false,
+        "hard_limit_min": 0,
+        "hard_limit_max": 50,
+        "soft_limit": 50
+      },
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Workshop",
+          "supports_standby": false,
+          "status": "indeterminate"
+        }
+      ]
+    },
+    {
+      "output_id": "170102f420700c6018e973f41f55b7231179",
+      "zone_id": "160102f420700c6018e973f41f55b7231179",
+      "can_group_with_output_ids": [
+        "170102f420700c6018e973f41f55b7231179"
+      ],
+      "display_name": "Network Streamer",
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Network Streamer",
+          "supports_standby": false,
+          "status": "standby"
+        }
+      ]
+    },
+    {
+      "output_id": "170105e221a0d39571c0d1bd6a8c3d77ce01",
+      "zone_id": "160105e221a0d39571c0d1bd6a8c3d77ce01",
+      "can_group_with_output_ids": [
+        "17014aa8632ebc7f92440124ad62e6a47f11",
+        "17012609a04d15192c407c278d3203eaed0c",
+        "17017b7d9a6b8d10fb0303e3ee4737c2fd77",
+        "1701349efe8e2e5657adbb505b895551af92",
+        "170105e221a0d39571c0d1bd6a8c3d77ce01",
+        "170100c8dba47a97c963f04d6fe07d0cff8f"
+      ],
+      "display_name": "Terrace",
+      "volume": {
+        "type": "number",
+        "min": 0,
+        "max": 100,
+        "value": 32,
+        "step": 1,
+        "is_muted": false,
+        "hard_limit_min": 0,
+        "hard_limit_max": 100,
+        "soft_limit": 100
+      },
+      "source_controls": [
+        {
+          "control_key": "1",
+          "display_name": "Terrace",
+          "supports_standby": false,
+          "status": "indeterminate"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifest:
+    name: Manifest and repository layout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # `omarchy plugin validate` only exists on an Omarchy machine, so CI needs
+      # an equivalent that runs anywhere.
+      - name: Validate manifest
+        run: python3 scripts/validate-manifest.py .
+
+  python:
+    name: Daemon lint and tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # The daemon has no runtime dependencies. Only the tooling is installed --
+      # if this list ever needs a library, that is a design regression worth
+      # noticing here.
+      - name: Install tooling
+        run: python -m pip install --upgrade pip ruff pytest
+      - name: Lint
+        run: ruff check backend scripts tests
+      - name: Test
+        run: python -m pytest tests -q --junitxml=junit-${{ matrix.python-version }}.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-${{ matrix.python-version }}
+          path: junit-${{ matrix.python-version }}.xml
+
+  fixtures:
+    # The unit and integration suites are only as honest as the captured
+    # payloads. A malformed fixture lets tests pass against nonsense.
+    name: Captured fixtures are still meaningful
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/check-fixtures.py
+      # Payloads captured from a real Core carry the names of the rooms in
+      # someone's house and what they were listening to. Redacting after the
+      # fact leaves it in the history, so the scrub is enforced here.
+      - run: python scripts/sanitise-fixtures.py --check
+
+  qml:
+    name: QML lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt tooling
+        run: sudo apt-get update && sudo apt-get install -y qt6-declarative-dev-tools
+      # qs.Ui and qs.Commons only resolve inside the running shell, so their
+      # imports are expected to fail here. What this catches is the class of
+      # error that silently kills a widget at load: a syntax slip, or a property
+      # shadowing a FINAL one on QQuickItem.
+      - name: Lint QML
+        run: |
+          set -euo pipefail
+          lint=$(command -v qmllint6 || command -v qmllint || echo /usr/lib/qt6/bin/qmllint)
+          fail=0
+          for f in qml/*.qml qml/components/*.qml; do
+            out=$("$lint" "$f" 2>&1 || true)
+            echo "$out" | grep -E 'Unexpected|syntax|shadows final|Cannot override' && {
+              echo "::error file=$f::QML would fail to load"; fail=1; }
+            echo "checked: $f"
+          done
+          exit $fail
+
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: |
+          set -euo pipefail
+          for f in bin/*; do
+            head -1 "$f" | grep -q bash && bash -n "$f" && echo "ok: $f"
+          done
+      - name: Shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck --severity=warning bin/omarchy-roon-endpoint bin/omarchy-roon-cava
+
+  marketplace:
+    name: Marketplace submission checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # The marketplace validates a submission at an exact commit and answers on
+      # the submission issue -- a slow loop, and every push to fix something
+      # moves the sha a maintainer would have to re-approve. Its rules are public
+      # MIT code, so run the real thing here instead of guessing.
+      #
+      # Pinned, not vendored: what runs is the marketplace's code, and moving the
+      # pin is a reviewable change rather than silent drift.
+      - name: Run the marketplace's own rules against this tree
+        run: |
+          set -euo pipefail
+          repo=$(python3 -c "import json;print(json.load(open('scripts/marketplace-baseline.json'))['repository'])")
+          commit=$(python3 -c "import json;print(json.load(open('scripts/marketplace-baseline.json'))['commit'])")
+          echo "rules: $repo@$commit"
+          mkdir -p /tmp/marketplace
+          # A gate that skips itself on a bad day is not a gate: the whole point
+          # is to fail here rather than on a submission issue days later, so a
+          # fetch failure retries and then fails the build.
+          ok=0
+          for attempt in 1 2 3; do
+            if curl -sSfL --max-time 60 \
+                 "https://codeload.github.com/$repo/tar.gz/$commit" -o /tmp/marketplace/rules.tar.gz; then
+              ok=1; break
+            fi
+            echo "attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
+          [ "$ok" = 1 ] || { echo "::error::could not fetch the marketplace rules"; exit 1; }
+          tar -xzf /tmp/marketplace/rules.tar.gz -C /tmp/marketplace \
+            --strip-components=1 --wildcards '*/scripts/*.mjs'
+          node scripts/marketplace-baseline.mjs /tmp/marketplace/scripts .
