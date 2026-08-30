@@ -63,6 +63,31 @@ there is no Roon GUI on Linux), enable this machine's output under
 
 `doctor` is read-only and is the first thing to run when anything looks wrong.
 
+### Removal
+
+```bash
+./bin/omarchy-roon-endpoint uninstall    # stops and removes both --user units
+omarchy plugin disable quickshell.roon
+omarchy plugin remove quickshell.roon
+```
+
+`uninstall` removes only what this project created: the two systemd `--user`
+units. It deliberately leaves `aur/roonbridge` and `~/.local/share/omarchy-roon`
+alone, because the package is Roon's own software and the data directory holds
+your endpoint's identity — remove those yourself if you want them gone:
+
+```bash
+sudo pacman -Rns roonbridge
+rm -rf ~/.local/share/omarchy-roon ~/.cache/omarchy-roon
+sudo ufw delete allow 9200/tcp && sudo ufw delete allow 30000:65535/tcp \
+  && sudo ufw delete allow 30000:65535/udp
+```
+
+The extension can also be removed from the Core in **Roon → Settings →
+Extensions**. Nothing outside those paths is touched, and the one file this
+project rewrites that it did not create — RAATServer's device JSON, when routing
+through PipeWire — is backed up beside itself as `.bak` first.
+
 ## The bar
 
 ![The bar icon](docs/screenshots/bar.png)
