@@ -127,3 +127,37 @@ function readableOr(candidate, background, fallback, minimum) {
   if (!candidate) return fallback
   return contrast(candidate, background) >= (minimum || 3) ? candidate : fallback
 }
+
+// HSL to RGB, so a colour can be lightened without leaving its hue behind.
+// Written out rather than reached for through Qt, so the search below stays a
+// pure function.
+function hslToRgb(hue, saturation, lightness) {
+  var c = (1 - Math.abs(2 * lightness - 1)) * saturation
+  var x = c * (1 - Math.abs(((hue * 6) % 2) - 1))
+  var m = lightness - c / 2
+  var i = Math.floor(hue * 6) % 6
+  var table = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]]
+  var t = table[i < 0 ? i + 6 : i]
+  return { r: t[0] + m, g: t[1] + m, b: t[2] + m }
+}
+
+// The lightness at which a hue first reads against a background, or -1 when no
+// lightness of it does.
+//
+// A colour taken from artwork often lands close to the surface it is drawn on.
+// Falling back to the theme's accent throws the record away for the sake of a
+// few percent of luminance; lifting the same hue until it passes keeps the
+// sleeve's identity and the legibility both. That is the difference between an
+// interface that wears the record and one that merely has a picture of it.
+function contrastLightness(hue, saturation, lightness, background, minimum) {
+  var target = minimum || 3
+  var toward = luminance(background) < 0.5 ? 1 : -1
+  var step = 0.04
+  var value = lightness
+  for (var i = 0; i <= 24; i++) {
+    if (contrast(hslToRgb(hue, saturation, value), background) >= target) return value
+    value += toward * step
+    if (value > 0.97 || value < 0.05) break
+  }
+  return -1
+}

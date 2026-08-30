@@ -23,13 +23,15 @@ Item {
   readonly property bool hasTrack: svc ? svc.hasTrack : false
   readonly property string artUrl: svc ? svc.artUrl : ""
 
-  // The sleeve's own colour when it has one AND it can be seen against the
-  // panel. `readableOr` is the measurement rather than the hope: a colour
-  // lifted from artwork often lands within a couple of percent of the surface
-  // it is drawn on, and WCAG asks 3:1 of anything that carries meaning.
-  readonly property color accent: svc && svc.hasArtAccent
-    ? Design.readableOr(svc.artAccent, Color.menu.background, Color.accent)
-    : Color.accent
+  // The sleeve's colour, lifted by the service until it reads against the panel.
+  // One answer for every surface: the playhead, the analyser and the queue's
+  // marker are all wearing the same record.
+  readonly property color accent: svc ? svc.artAccentReadable : Color.accent
+
+  // How light the sleeve is. A white cover lifts the blurred backdrop until
+  // muted metadata disappears into it -- so the wash over it is measured from
+  // the artwork rather than fixed.
+  readonly property real artLuma: svc ? svc.artLuma : 0
 
   readonly property var outputFormat: svc ? svc.outputFormat : null
 
@@ -49,8 +51,12 @@ Item {
   Rectangle {
     anchors.fill: parent
     radius: Style.space(6)
+    // Measured, not fixed: a bright sleeve needs more wash under the text than
+    // a dark one, and the same number cannot be right for both.
     color: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
-                   Color.menu.background.b, 0.55)
+                   Color.menu.background.b,
+                   0.45 + Math.min(0.35, root.artLuma * 0.5))
+    Behavior on color { ColorAnimation { duration: Design.slow } }
   }
 
   Column {
@@ -58,20 +64,87 @@ Item {
     width: Math.min(parent.width - Style.space(48), Style.space(560))
     spacing: Style.space(18)
 
-    RoundedImage {
+    Item {
+      id: sleeve
       anchors.horizontalCenter: parent.horizontalCenter
-      width: Math.min(Style.space(300),
-                      root.height - Style.space(210))
+      width: Math.min(Style.space(340), root.height - Style.space(210))
       height: width
-      radius: Style.space(6)
-      decodeSize: 640
-      source: root.artUrl
       visible: width > Style.space(60)
+
+      TiltFrame {
+        id: tilt
+        anchors.fill: parent
+        radius: Style.space(6)
+        // It does not listen for the pointer itself -- two overlapping hover
+        // areas means only the topmost hears anything -- so the area below
+        // feeds it what it already knows.
+        active: sleeveHover.containsMouse
+        pointerX: sleeveHover.mouseX
+        pointerY: sleeveHover.mouseY
+
+        RoundedImage {
+          id: sleeveArt
+          anchors.fill: parent
+          radius: Style.space(6)
+          decodeSize: 640
+          source: root.artUrl
+        }
+      }
+
+      MouseArea {
+        id: sleeveHover
+        anchors.fill: parent
+        hoverEnabled: true
+      }
+
+      // A record arriving, rather than one picture being swapped for another.
+      // Fired off the artwork rather than the title because MPRIS pushes the
+      // art at the moment the track changes, where the polled state is seconds
+      // behind.
+      Connections {
+        target: root.svc
+        function onArtUrlChanged() { arrive.restart() }
+      }
+
+      SequentialAnimation {
+        id: arrive
+        PropertyAction { target: sleeve; property: "opacity"; value: 0 }
+        PropertyAction { target: sleeve; property: "scale"; value: 0.965 }
+        ParallelAnimation {
+          NumberAnimation {
+            target: sleeve; property: "opacity"; to: 1
+            duration: Design.base; easing.type: Easing.OutCubic
+          }
+          NumberAnimation {
+            target: sleeve; property: "scale"; to: 1
+            duration: Design.slow; easing.type: Easing.OutBack; easing.overshoot: 1.05
+          }
+        }
+      }
     }
 
     Column {
+      id: words
       width: parent.width
       spacing: Style.space(4)
+
+      // A beat behind the sleeve: letting the object move first and the words
+      // follow reads as one thing making room for another, where moving both
+      // at once reads as the whole panel wobbling.
+      Connections {
+        target: root.svc
+        function onArtUrlChanged() { settle.restart() }
+      }
+
+      SequentialAnimation {
+        id: settle
+        PauseAnimation { duration: Design.stagger }
+        PropertyAction { target: words; property: "opacity"; value: 0 }
+        NumberAnimation {
+          target: words; property: "opacity"; to: 1
+          duration: Design.base; easing.type: Easing.OutCubic
+        }
+      }
 
       Text {
         textFormat: Text.PlainText

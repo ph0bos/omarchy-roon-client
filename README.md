@@ -125,14 +125,23 @@ full window.
 A summoned window, over whatever you are working in, on the screen you are
 looking at. Escape closes it; it remembers where you were.
 
-**Now playing** — the sleeve, the track, the room, and a live spectrum analyser
-reading the same PipeWire signal that reaches your DAC. The page is washed in
-the record's own colour, and the format leaving this machine is on the foot of
-it.
+Down the left is your library — Albums, Artists, Genres, Composers, Playlists,
+Live radio — and each one is a place Roon can open directly rather than a folder
+you have to walk to. The room you are playing to sits at the foot of it, because
+everything above it follows that room. `Tab` moves between the sidebar and the
+page.
+
+**Now playing** — takes the whole window: the sidebar slides away and the record
+gets the room. The sleeve leans toward your cursor with the light following it,
+the page is washed in the record's own colour — measured from the artwork and
+lifted until it can actually be read against your theme — and a live spectrum
+analyser reads the same PipeWire signal that reaches your DAC, in that same
+colour. The format leaving this machine sits underneath. Click the artwork in
+the transport strip to leave, and you land back exactly where you were.
 
 ![Now playing](docs/screenshots/overlay-nowplaying.png)
 
-**The library** — `L`, or the book in the header. Browse your Roon library, or
+**The library** — anything in the sidebar, or `L`. Browse your Roon library, or
 search it: results come back as Roon's own — a top hit, then artists, albums,
 composers, tracks and works. `Enter` opens a row, `Backspace` goes back, and a
 wall of covers is drawn as a grid while a track list stays a list.
@@ -152,8 +161,8 @@ own `play_from_here`, so it behaves exactly as it does on your phone.
 The transport strip is shared by all three, because the controls should not
 disappear because you switched to the queue.
 
-`M` opens the menu — shuffle, repeat, Roon Radio, track notifications, and the
-rooms. Those first three are properties of the **zone**, so changing one changes
+The room at the foot of the sidebar, or `M`, opens the menu — shuffle, repeat,
+Roon Radio, track notifications, and the rooms. Those first three are properties of the **zone**, so changing one changes
 it for the room and for whoever is looking at their phone. Switching rooms here
 switches everything: the bar, the media keys and the queue all follow the same
 pinned zone. `?` shows the keyboard map.
@@ -164,8 +173,9 @@ omarchy-shell roon library          # straight to the library
 omarchy-shell roon queue            # straight to the queue
 ```
 
-Inside: `Space` play/pause, `←`/`→` previous and next, `N` now playing, `L`
-library, `Q` queue, `/` search, `M` menu, `?` keys, `Escape` to close.
+Inside: `Space` play/pause, `←`/`→` previous and next, `Tab` sidebar, `N` now
+playing, `L` library, `Q` queue, `/` search, `M` menu, `?` keys, `Escape` to
+close.
 
 ### First run
 

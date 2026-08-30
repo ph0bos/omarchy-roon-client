@@ -1,8 +1,12 @@
 import QtQuick
 import qs.Commons
 
-// The actions that are not worth a button of their own: playback modes, Roon
+// The actions that are not worth a place of their own: playback modes, Roon
 // Radio, notifications, and the rooms.
+//
+// Navigation is NOT here. The sidebar is where you are and where you can go;
+// duplicating it in a menu gives the same place two doors and makes neither
+// authoritative.
 //
 // Rendered inline by whatever hosts it rather than as its own layer-shell
 // surface, because a plugin only gets one panel-kind entry point and that is
@@ -33,10 +37,6 @@ Item {
     : (loopMode === "loop_one" ? "one" : "off")
 
   readonly property var items: [
-    { glyph: "", label: "Now playing", action: "nowPlaying", state: "", on: false },
-    { glyph: "", label: "Queue",       action: "queue",      state: "", on: false },
-    { glyph: "\uf02d", label: "Library",   action: "library",    state: "", on: false },
-    { glyph: "",  label: "",            action: "sep",        state: "", on: false },
     { glyph: "", label: "Shuffle",     action: "shuffle",
       state: root.shuffled ? "on" : "off", on: root.shuffled },
     { glyph: "", label: "Repeat",      action: "repeat",

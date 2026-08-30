@@ -1,6 +1,8 @@
 import QtQuick
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import qs.Commons
+import "lib/Design.js" as Design
 import "lib/Roond.js" as Roond
 
 // Headless singleton for the Roon plugin.
@@ -193,7 +195,35 @@ Item {
   // whenever a sleeve reported no colour at all.
   property bool hasArtAccent: false
   property bool artIsLight: false
+  // 0..1. How light the sleeve is, which decides how much wash the text over it
+  // needs: a white cover lifts a blurred backdrop until muted metadata vanishes
+  // into it, and that is a measurement rather than a guess.
+  property real artLuma: 0
   property string paletteKey: ""
+
+  // The sleeve's colour, lifted until it reads against the surface every one of
+  // this plugin's panels is drawn on.
+  //
+  // A colour taken from artwork often lands within a couple of percent of that
+  // panel, and WCAG asks 3:1 of anything carrying meaning. Falling back to the
+  // theme's accent there throws the record away for the sake of a little
+  // luminance; lifting the same HUE until it passes keeps the sleeve's identity
+  // and the legibility both. Only when no lightness of that hue would do does
+  // the theme take over.
+  //
+  // Computed here rather than in each surface so there is one answer: the bar's
+  // playhead, the analyser and the queue's marker are all wearing the same
+  // record.
+  readonly property color artAccentReadable: {
+    if (!root.hasArtAccent) return Color.accent
+    var background = Color.menu.background
+    var candidate = Qt.color(root.artAccent)
+    if (Design.contrast(candidate, background) >= 3) return candidate
+    var lightness = Design.contrastLightness(candidate.hslHue, candidate.hslSaturation,
+                                             candidate.hslLightness, background, 3)
+    if (lightness < 0) return Color.accent
+    return Qt.hsla(candidate.hslHue, candidate.hslSaturation, lightness, 1)
+  }
 
   function imageKeyFromUrl(url) {
     var m = String(url || "").match(/\/api\/image\/([^?]+)/)
@@ -212,11 +242,13 @@ Item {
       root.hasArtAccent = !!p.color
       root.artAccent = p.color ? p.color : "transparent"
       root.artIsLight = !!p.isLight
+      root.artLuma = p.luma !== undefined ? p.luma : 0
     }, function() {
       if (!root.alive) return
       root.hasArtAccent = false
       root.artAccent = "transparent"
       root.artIsLight = false
+      root.artLuma = 0
     })
   }
 

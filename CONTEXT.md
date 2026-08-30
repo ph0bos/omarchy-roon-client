@@ -700,6 +700,88 @@ Three things this session got wrong and only screenshots caught:
   subtitle is usually the count already, so ours only speaks when nothing else
   has.
 
+### The layout: a sidebar, and artwork that takes the window
+
+Reviewed against Apple Music and TIDAL, the first pass was wrong in one
+structural way and several small ones.
+
+**Navigation was a mode, not a place.** Three unlabelled glyphs in the header
+toggled whole views. Nothing said where you were, and nothing said what else
+existed -- the shape of the library was invisible until you went looking for it.
+Both references answer this the same way: a sidebar, permanently on screen.
+
+**The library's roots were buried.** Reaching the albums meant walking Explore ->
+Library -> Albums: three moves to a place the protocol will take you in one,
+because Roon lets you browse a *hierarchy* directly. The sidebar is now exactly
+that list -- Albums, Artists, Genres, Composers, Playlists, Live radio -- and
+each entry is one `pop_all` browse into its hierarchy.
+
+**The room was in a menu.** Everything in this window is scoped to the pinned
+zone: the queue, the transport, the media keys, the bar. It belongs at the foot
+of the sidebar, where Apple Music keeps the same control, not two clicks inside
+a popover.
+
+**Now playing wasted the window.** A 1020x760 card held one centred sleeve. In
+TIDAL the now-playing face takes the whole surface, so it does here: the sidebar
+slides away, the artwork fills the card, and the transport strip stays because
+that is what you reach for from there. Leaving it puts you back where you were
+-- three levels into a record if that is where you left -- which is why `goTo`
+distinguishes *choosing* a place from *returning* to one.
+
+Two bugs fell out of doing it:
+
+**A `Row` ignores its children's anchors.** The mark and the wordmark were
+anchored to a shared baseline inside a Row, so the anchor did nothing and the
+mark sat low and left of the word for the whole of R2 so far. Laid out by hand
+they line up. This is the second time the same trap has cost time -- the first
+was in `SetupWizard` -- and it is worth remembering as: *inside a Row or Column,
+you do not get to say where a child goes.*
+
+**A page can outlive the Core it came from.** Swapping the daemon underneath a
+running shell left the browse view showing the previous Core's albums: every
+`item_key` on screen belonged to a browse session that no longer existed, so the
+rows rendered and clicking one went nowhere. The view now reloads when the
+daemon comes back. Caught by accident, while taking screenshots against `--demo`
+-- which is also why the README screenshots are verified against the *data*, not
+just eyeballed.
+
+### Wearing the record: colour, contrast and motion
+
+The daemon has measured the sleeve since R1 -- `/palette` returns a
+representative colour and a luminance -- but the interface only used it for a
+dot on the quality badge. It now wears it properly, on the same terms
+`omarchy-tidal` does.
+
+**The colour is lifted, not discarded.** A colour taken from artwork often lands
+within a couple of percent of the panel it is drawn on, and WCAG asks 3:1 of
+anything carrying meaning. Falling back to the theme's accent there throws the
+record away for the sake of a little luminance; `Design.contrastLightness` walks
+the same HUE up (or down, on a light theme) until it passes, so the identity and
+the legibility both survive. Only when no lightness of that hue would do does the
+theme take over.
+
+It is computed once, in the service, as `artAccentReadable` -- so the playhead,
+the analyser, the queue's marker and the quality dot are demonstrably wearing the
+same record rather than four surfaces each doing their own arithmetic.
+
+**The wash is measured.** A white cover lifts the blurred backdrop until muted
+metadata vanishes into it, so the scrim over the artwork is a function of the
+sleeve's luminance rather than one number chosen against one album.
+
+**`TiltFrame` came across unchanged.** It is presentation with nothing
+service-specific in it: the sleeve leans toward the pointer, a pool of light
+follows it, and the far side falls away. It leans quickly and returns slowly,
+because snapping back is what makes this kind of effect feel cheap. It does not
+listen for the pointer itself -- two overlapping hover areas means only the
+topmost hears anything -- so the view feeds it the coordinates it already has.
+
+**A record arrives rather than being swapped.** On a track change the sleeve
+fades and scales in, and the words follow one `Design.stagger` behind: letting
+the object move first and the text follow reads as one thing making room for
+another, where moving both at once reads as the panel wobbling. Both are driven
+off `artUrl`, because MPRIS pushes that at the instant the track changes while
+the polled state is seconds behind.
+
 ### Proven end to end against a live Core
 
 Discovery through all three tiers; register; silent reconnect with a stored token;

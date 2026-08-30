@@ -31,6 +31,25 @@ Item {
   property bool opened: false
   property string currentView: "nowPlaying"
 
+  // Which of Roon's hierarchies the library view is in, so the sidebar can show
+  // where you are rather than merely which view is up.
+  property string hierarchy: "albums"
+  // The sidebar's own key: a view for the first two entries, a hierarchy for
+  // the rest.
+  readonly property string place:
+    currentView === "browse" ? root.hierarchy : root.currentView
+  property bool sidebarFocused: false
+
+  // Now playing is the record, given the whole window -- the same move TIDAL's
+  // now-playing face makes. The sidebar is navigation, and while you are
+  // looking at a sleeve there is nothing to navigate; the transport stays,
+  // because that is what you reach for from here.
+  readonly property bool fullBleed: currentView === "nowPlaying" && !blocked
+
+  // Where the artwork came from, so leaving it puts you back rather than
+  // somewhere arbitrary.
+  property string lastPageView: "browse"
+
   readonly property var svc: shell ? shell.serviceFor("quickshell.roon") : null
 
   readonly property string pluginDir:
@@ -65,6 +84,7 @@ Item {
       try { args = JSON.parse(payloadJson) || {} } catch (e) { args = {} }
     }
     var requested = String(args.view || "nowPlaying")
+    if (requested === "library") requested = "browse"
     if (requested !== "queue" && requested !== "browse") requested = "nowPlaying"
     root.requestedView = requested
     root.currentView = root.blocked ? "setup" : requested
@@ -103,6 +123,25 @@ Item {
   property bool menuOpen: false
   property bool shortcutsOpen: false
 
+  // One way in for every navigation: the sidebar, the keys and the summon
+  // payload all land here, so "where am I" has one answer.
+  // `reset` is the difference between choosing a place and returning to one.
+  // Clicking Albums in the sidebar means "take me to the albums", top and all;
+  // coming back from the artwork means "put me back where I was", three levels
+  // into a record if that is where I left.
+  function goTo(key, reset) {
+    if (root.currentView !== "nowPlaying") root.lastPageView = root.place
+    if (key === "nowPlaying" || key === "queue") {
+      root.currentView = key
+      return
+    }
+    var moved = root.hierarchy !== key
+    root.hierarchy = key
+    root.currentView = "browse"
+    if ((moved || reset) && browseLoader.item) browseLoader.item.openHierarchy(key)
+    Qt.callLater(root.focusView)
+  }
+
   function toggleShortcuts() {
     root.menuOpen = false
     root.shortcutsOpen = !root.shortcutsOpen
@@ -113,9 +152,6 @@ Item {
     root.menuOpen = false
     if (!root.svc) return
     switch (action) {
-      case "nowPlaying":    root.currentView = "nowPlaying"; break
-      case "queue":         root.currentView = "queue"; break
-      case "library":       root.currentView = "browse"; break
       case "shuffle":       root.svc.toggleShuffle(); break
       case "repeat":        root.svc.cycleLoop(); break
       case "radio":         root.svc.toggleAutoRadio(); break
@@ -215,8 +251,19 @@ Item {
           root.menuOpen = !root.menuOpen
           event.accepted = true
         } else if (event.key === Qt.Key_L || event.key === Qt.Key_Slash) {
-          root.currentView = "browse"
+          root.goTo(root.hierarchy, false)
           event.accepted = true
+        } else if (event.key === Qt.Key_Tab) {
+          root.sidebarFocused = !root.sidebarFocused
+          if (!root.sidebarFocused) Qt.callLater(root.focusView)
+          event.accepted = true
+        } else if (root.sidebarFocused && event.key === Qt.Key_Down) {
+          sidebar.move(1); event.accepted = true
+        } else if (root.sidebarFocused && event.key === Qt.Key_Up) {
+          sidebar.move(-1); event.accepted = true
+        } else if (root.sidebarFocused
+                   && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+          sidebar.activate(); event.accepted = true
         } else if (event.key === Qt.Key_Question) {
           root.toggleShortcuts()
           event.accepted = true
@@ -241,25 +288,44 @@ Item {
         // Swallow clicks so they do not fall through to the dismiss scrim.
         MouseArea { anchors.fill: parent }
 
+        // ---- the sidebar ----
+        //
+        // The shape of the library, permanently on screen. Navigation is a
+        // place you are in rather than a mode you toggle, which is how both
+        // Apple Music and TIDAL are laid out and what a row of unlabelled
+        // glyphs in a header cannot be.
         Item {
-          id: header
-          anchors.top: parent.top
+          id: sidebarPane
           anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.margins: Style.space(18)
-          height: Style.space(30)
+          anchors.top: parent.top
+          anchors.bottom: transportBar.top
+          anchors.leftMargin: Style.space(10)
+          anchors.topMargin: Style.space(14)
+          anchors.bottomMargin: Style.space(10)
+          width: root.fullBleed ? 0 : Style.space(186)
+          visible: !root.blocked && width > 0
+          clip: true
+          // Slides away rather than vanishing: the artwork arriving and the
+          // navigation leaving are one movement, not two events.
+          Behavior on width { NumberAnimation { duration: 190; easing.type: Easing.OutCubic } }
 
-          Row {
+          // Laid out by hand rather than in a Row: a Row positions its
+          // children itself and IGNORES their anchors, so the baseline anchor
+          // did nothing and the mark sat low and left of the word. Here the
+          // mark is centred on the text's own capitals, which is the line the
+          // eye reads it against.
+          Item {
+            id: wordmarkRow
+            anchors.top: parent.top
             anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(10)
+            anchors.right: parent.right
+            anchors.leftMargin: Style.space(11)
+            height: Style.space(30)
 
-            // Mark and wordmark sit on one baseline, and the mark is drawn to
-            // the height of the capitals rather than to the text's full line
-            // box, which includes ascent and descent the letters never fill.
             RoonMark {
-              anchors.baseline: wordmark.baseline
-              anchors.baselineOffset: 1
+              id: mark
+              anchors.left: parent.left
+              anchors.verticalCenter: wordmark.verticalCenter
               markHeight: Math.round(Style.font.heading * 0.86)
               color: Color.accent
               live: root.svc ? root.svc.playing : false
@@ -269,6 +335,8 @@ Item {
             Text {
               id: wordmark
               textFormat: Text.PlainText
+              anchors.left: mark.right
+              anchors.leftMargin: Style.space(10)
               anchors.verticalCenter: parent.verticalCenter
               text: "Roon"
               color: root.foreground
@@ -279,71 +347,102 @@ Item {
             }
           }
 
-          Row {
+          Sidebar {
+            id: sidebar
+            anchors.top: wordmarkRow.bottom
+            anchors.topMargin: Style.space(14)
+            anchors.left: parent.left
             anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            svc: root.svc
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            current: root.place
+            focused: root.sidebarFocused
+            onChosen: function(key, label) {
+              root.sidebarFocused = false
+              root.goTo(key, true)
+            }
+            onRoomsRequested: root.menuOpen = !root.menuOpen
+          }
+        }
+
+        Rectangle {
+          id: sidebarRule
+          anchors.left: sidebarPane.right
+          anchors.leftMargin: Style.space(10)
+          anchors.top: parent.top
+          anchors.bottom: transportBar.top
+          width: Math.max(1, Style.space(1))
+          color: root.borderColor
+          opacity: 0.4
+          visible: !root.blocked && !root.fullBleed
+        }
+
+        // The wizard has no sidebar to sit beside, so it keeps the mark of its
+        // own and the card shrinks around it.
+        Item {
+          id: setupHeader
+          anchors.top: parent.top
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.margins: Style.space(18)
+          height: Style.space(30)
+          visible: root.blocked
+
+          RoonMark {
+            id: setupMark
+            anchors.left: parent.left
+            anchors.verticalCenter: setupWordmark.verticalCenter
+            markHeight: Math.round(Style.font.heading * 0.86)
+            color: Color.accent
+            live: false
+            struck: root.svc ? !root.svc.daemonUp : true
+          }
+
+          Text {
+            id: setupWordmark
+            textFormat: Text.PlainText
+            anchors.left: setupMark.right
+            anchors.leftMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(6)
-
-            HeaderButton {
-              glyph: ""
-              tooltip: "Now playing"
-              visible: !root.blocked
-              active: root.currentView === "nowPlaying"
-              fontFamily: root.fontFamily
-              foreground: root.foreground
-              onActivated: root.currentView = "nowPlaying"
-            }
-
-            HeaderButton {
-              glyph: ""
-              tooltip: "Library"
-              visible: !root.blocked
-              active: root.currentView === "browse"
-              fontFamily: root.fontFamily
-              foreground: root.foreground
-              onActivated: root.currentView = "browse"
-            }
-
-            HeaderButton {
-              glyph: ""
-              tooltip: "Queue"
-              visible: !root.blocked
-              active: root.currentView === "queue"
-              fontFamily: root.fontFamily
-              foreground: root.foreground
-              onActivated: root.currentView = "queue"
-            }
-
-            HeaderButton {
-              glyph: ""
-              tooltip: "Menu"
-              visible: !root.blocked
-              active: root.menuOpen
-              fontFamily: root.fontFamily
-              foreground: root.foreground
-              onActivated: root.menuOpen = !root.menuOpen
-            }
+            text: "Roon"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.heading
+            font.weight: Font.DemiBold
+            font.letterSpacing: 0.6
           }
         }
 
         Rectangle {
           id: headerRule
-          anchors.top: header.bottom
+          anchors.top: setupHeader.bottom
           anchors.topMargin: Style.space(12)
           anchors.left: parent.left
           anchors.right: parent.right
           height: Math.max(1, Style.space(1))
           color: root.borderColor
           opacity: 0.5
+          visible: root.blocked
+        }
+
+        // ---- the page ----
+        Item {
+          id: content
+          anchors.left: sidebarRule.right
+          anchors.leftMargin: root.fullBleed ? 0 : Style.space(12)
+          anchors.right: parent.right
+          anchors.rightMargin: root.fullBleed ? 0 : Style.space(4)
+          anchors.top: parent.top
+          anchors.topMargin: root.fullBleed ? 0 : Style.space(12)
+          anchors.bottom: transportBar.top
+          visible: !root.blocked
         }
 
         Loader {
           id: nowPlayingLoader
-          anchors.top: headerRule.bottom
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.bottom: transportBar.top
-          anchors.margins: Style.space(4)
+          anchors.fill: content
           active: root.nowPlayingLoaded
           // Cross-faded rather than cut. Both views stay loaded, so the swap is
           // a change of attention, not a page load, and it should look like one.
@@ -360,12 +459,7 @@ Item {
 
         Loader {
           id: browseLoader
-          anchors.top: headerRule.bottom
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.bottom: transportBar.top
-          anchors.margins: Style.space(10)
-          anchors.topMargin: Style.space(10)
+          anchors.fill: content
           active: root.browseLoaded
           opacity: root.currentView === "browse" && !root.blocked ? 1 : 0
           visible: opacity > 0.01
@@ -375,6 +469,10 @@ Item {
             svc: root.svc
             foreground: root.foreground
             fontFamily: root.fontFamily
+            // Where the sidebar says we are, so the page it loads on creation
+            // is the page the sidebar is pointing at. Without this the view
+            // opens its own default and the two disagree on screen.
+            hierarchy: root.hierarchy
             focus: root.currentView === "browse" && root.opened
             // "Playing" and "Not found" alike go to Omarchy's own OSD: a browse
             // action's answer is a message, not a page.
@@ -386,12 +484,7 @@ Item {
 
         Loader {
           id: queueLoader
-          anchors.top: headerRule.bottom
-          anchors.left: parent.left
-          anchors.right: parent.right
-          anchors.bottom: transportBar.top
-          anchors.margins: Style.space(10)
-          anchors.topMargin: Style.space(14)
+          anchors.fill: content
           active: root.queueLoaded
           opacity: root.currentView === "queue" && !root.blocked ? 1 : 0
           visible: opacity > 0.01
@@ -436,10 +529,13 @@ Item {
           id: quickMenu
           visible: root.menuOpen
           z: 100
-          anchors.top: header.bottom
-          anchors.right: parent.right
-          anchors.topMargin: Style.space(6)
-          anchors.rightMargin: Style.space(14)
+          // Anchored to the corner it is summoned from -- the room at the
+          // foot of the sidebar -- the way Apple Music hangs its AirPlay and
+          // account popovers off theirs.
+          anchors.bottom: transportBar.top
+          anchors.left: parent.left
+          anchors.bottomMargin: Style.space(6)
+          anchors.leftMargin: Style.space(12)
           svc: root.svc
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -479,8 +575,8 @@ Item {
           foreground: root.foreground
           fontFamily: root.fontFamily
           expanded: root.currentView === "nowPlaying"
-          onArtClicked: root.currentView =
-            root.currentView === "nowPlaying" ? "queue" : "nowPlaying"
+          onArtClicked: root.goTo(
+            root.currentView === "nowPlaying" ? root.lastPageView : "nowPlaying")
         }
       }
     }

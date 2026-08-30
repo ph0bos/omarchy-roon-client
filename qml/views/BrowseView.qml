@@ -30,6 +30,11 @@ Item {
   property string sessionKey: "library"
   property string searchKey: "library-search"
 
+  // Which of Roon's hierarchies this view is in. The API lets you jump straight
+  // into one, which is the difference between reaching the albums in a click
+  // and walking Explore -> Library -> Albums to get there.
+  property string hierarchy: "browse"
+
   // Where we are: one entry per level pushed into, so the header can say it and
   // Back knows how many levels to pop.
   property var trail: []
@@ -54,7 +59,7 @@ Item {
   // tree and results can clear the list exactly once.
   property bool wasSearching: false
   readonly property string activeKey: searching ? root.searchKey : root.sessionKey
-  readonly property string activeHierarchy: searching ? "search" : "browse"
+  readonly property string activeHierarchy: searching ? "search" : root.hierarchy
 
   // Artists get round art, records square: the convention every music app uses
   // to separate a person from a thing. Roon does not label rows, but it does
@@ -91,7 +96,28 @@ Item {
 
   signal actionMessage(string text, bool isError)
 
-  Component.onCompleted: root.openRoot()
+  Component.onCompleted: {
+    root.loadedOnce = true
+    root.openRoot()
+  }
+
+  property bool loadedOnce: false
+
+  // A daemon that went away and came back is a Core we were disconnected from,
+  // and every `item_key` on screen belongs to a browse session that no longer
+  // exists: the rows still render, and clicking one goes nowhere. Reload the
+  // place we are in rather than leaving a page that only looks alive.
+  //
+  // Found the hard way: with the daemon swapped underneath a running shell, the
+  // view happily kept showing the previous Core's albums.
+  Connections {
+    target: root.svc
+    function onDaemonUpChanged() {
+      if (!root.svc || !root.svc.daemonUp || !root.loadedOnce) return
+      root.trail = []
+      root.openRoot()
+    }
+  }
 
   // ---- moving the cursor ----
   function apply(result, trailEntry, ticket) {
@@ -118,10 +144,19 @@ Item {
   function openRoot() {
     var ticket = ++root.serial
     root.loading = true
-    Roond.page({ session_key: root.sessionKey, hierarchy: "browse",
+    Roond.page({ session_key: root.sessionKey, hierarchy: root.hierarchy,
                  pop_all: true, count: 100 },
       function(r) { root.apply(r, [], ticket) },
       function(e) { root.fail(e, ticket) })
+  }
+
+  // Jump straight into one of Roon's hierarchies, which is what the sidebar
+  // does. Leaving a search is part of it: the sidebar is a different place, not
+  // a filter on the one you were already in.
+  function openHierarchy(name) {
+    root.hierarchy = name
+    if (root.query !== "") root.query = ""   // reloads through onQueryChanged
+    else root.openRoot()
   }
 
   function fail(reason, ticket) {

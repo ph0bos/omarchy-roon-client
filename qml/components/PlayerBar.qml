@@ -34,10 +34,10 @@ Item {
   readonly property bool hiRes: outputFormat
     ? (outputFormat.sample_rate > 48000 || outputFormat.bits > 16) : false
 
-  // The sleeve's own colour, when it has one and it can be seen against the
-  // panel. A black-and-white cover reports none, and the theme's accent is the
-  // honest fallback rather than a grey.
-  readonly property color artAccent: svc && svc.hasArtAccent ? svc.artAccent : Color.accent
+  // The sleeve's own colour, lifted until it can be seen against the panel. A
+  // black-and-white cover reports none, and the theme's accent is the honest
+  // fallback rather than a grey.
+  readonly property color artAccent: svc ? svc.artAccentReadable : Color.accent
 
   readonly property color scrim: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
                                          Color.menu.background.b, 0.45)
@@ -259,5 +259,8 @@ Item {
     svc: root.svc
     foreground: root.foreground
     fontFamily: root.fontFamily
+    // The playhead belongs to the record it is playing.
+    accent: root.artAccent
+    Behavior on accent { ColorAnimation { duration: 280 } }
   }
 }

@@ -103,7 +103,7 @@ Item {
       playing: index === root.playingIndex
       foreground: root.foreground
       fontFamily: root.fontFamily
-      accent: root.svc && root.svc.hasArtAccent ? root.svc.artAccent : Color.accent
+      accent: root.svc ? root.svc.artAccentReadable : Color.accent
       onActivated: {
         if (root.svc) root.svc.playFromHere(modelData.queue_item_id)
       }

@@ -28,9 +28,18 @@ Item {
         { keys: "N", what: "Now playing" },
         { keys: "Q", what: "The queue" },
         { keys: "L  /", what: "The library" },
+        { keys: "Tab", what: "Sidebar, and back" },
         { keys: "M", what: "Menu: modes and rooms" },
         { keys: "?", what: "This list" },
         { keys: "Esc", what: "Close" }
+      ]
+    },
+    {
+      title: "In the sidebar",
+      keys: [
+        { keys: "\u2191 \u2193", what: "Move" },
+        { keys: "Enter", what: "Go there" },
+        { keys: "Tab", what: "Back to the page" }
       ]
     },
     {

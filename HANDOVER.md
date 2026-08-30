@@ -179,6 +179,11 @@ Room names are a floor plan; a library is a listening history.
    list stays a list, and both album and artist pages wear the artwork Roon
    puts on the list object.
 
+The layout is a sidebar down the left with the library's roots, a page beside
+it, and one transport strip along the bottom — Apple Music's and TIDAL's shape,
+not the header-tabs the first pass had. Now playing takes the whole window. See
+*The layout* in `CONTEXT.md`.
+
 `ArtCard` is ported. What is still unported from `omarchy-tidal` is `Shelf`,
 `LibraryGrid`, `ScrollHint`, `TiltFrame` and `HomeView` — the furniture for a
 *landing page* of library roots, recently played and a Roon Radio toggle, which
