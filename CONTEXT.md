@@ -782,6 +782,58 @@ another, where moving both at once reads as the panel wobbling. Both are driven
 off `artUrl`, because MPRIS pushes that at the instant the track changes while
 the polled state is seconds behind.
 
+### A landing page built only from what exists
+
+Apple Music and TIDAL open on an algorithmic home: jump back in, recently
+played, made for you. **None of that is reachable from a Roon extension.** The
+browse root an extension sees is Library, Playlists, My Live Radio, Genres and
+Settings; there is no recently-played list, no recently-added, and no ordering
+but the Core's own. Verified against a live Core rather than assumed -- the
+Library node contains exactly Search, Artists, Albums, Tracks, Composers, Tags.
+
+So Home is what is true instead:
+
+* **What is playing**, given the top of the page. On a client you mostly drive
+  from your phone, that IS the news.
+* **Roon Radio**, which is the one control that decides what happens when the
+  queue runs dry -- and a property of the ROOM, so turning it on here turns it
+  on for whoever else is listening.
+* **Your playlists** as a list, not a shelf: Roon returns no artwork for them,
+  and a row of blank tiles is worse than a row of names.
+* **Genres** as chips, because there are twenty and they are a word each.
+* **Albums**, labelled "Albums". A shelf called "Jump back in" filled with
+  records beginning with a digit is the kind of lie an interface never recovers
+  from.
+
+**Positions travel, not keys.** Each shelf browses on its own session key, and
+an `item_key` is only valid in the session that produced it -- so clicking a
+card sends the *hierarchy and the index*, and the library view re-browses that
+hierarchy and opens the row at that position. Proven end to end: clicking the
+third album card lands on exactly what `/page` reports as index 2.
+
+### The queue cannot be edited, and that is the Core's answer
+
+Reorder and remove are not missing from this client; they are missing from the
+API. Asked directly, with an empty body so that nothing could act:
+
+    definitely_not_a_method  -> InvalidRequest, no body      (does not exist)
+    remove_from_queue        -> InvalidRequest, no body      (does not exist)
+    move_in_queue            -> InvalidRequest, no body      (does not exist)
+    reorder_queue            -> InvalidRequest, no body      (does not exist)
+    clear_queue              -> InvalidRequest, no body      (does not exist)
+    play_from_here           -> InvalidRequest: "missing required string field:
+                                zone_or_output_id"           (exists)
+
+A verb that exists rejects the body by naming what it wanted; a verb that does
+not exist is refused with nothing at all. `play_from_here` is the only queue
+verb the transport service has, which is why it is the only thing a queue row
+does. Anything else -- reordering, removing, clearing -- has to happen in Roon's
+own app.
+
+**Up next** is the compensation: the queue is already live for the queue view,
+so the now-playing page shows the next nine beside the record when there is
+room for them, each one a `play_from_here` away.
+
 ### Proven end to end against a live Core
 
 Discovery through all three tiers; register; silent reconnect with a stored token;

@@ -120,6 +120,14 @@ Item {
   }
 
   // ---- moving the cursor ----
+  // A row the home page asked for, by position, to be opened as soon as the
+  // hierarchy it belongs to has loaded. Position rather than `item_key` because
+  // a key is only valid in the session that produced it, and the home page
+  // browses on its own.
+  property int pendingIndex: -1
+
+  function openLater(index) { root.pendingIndex = index }
+
   function apply(result, trailEntry, ticket) {
     if (ticket !== undefined && ticket !== root.serial) return
     root.loading = false
@@ -139,6 +147,15 @@ Item {
     root.selected = 0
     if (trailEntry !== undefined) root.trail = trailEntry
     list.positionViewAtBeginning()
+
+    if (root.pendingIndex >= 0) {
+      var wanted = root.pendingIndex
+      root.pendingIndex = -1
+      if (wanted < root.items.length) {
+        root.selected = wanted
+        root.open(root.items[wanted])
+      }
+    }
   }
 
   function openRoot() {

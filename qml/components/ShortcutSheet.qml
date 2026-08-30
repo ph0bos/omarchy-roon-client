@@ -27,6 +27,7 @@ Item {
         { keys: "← →", what: "Previous and next" },
         { keys: "N", what: "Now playing" },
         { keys: "Q", what: "The queue" },
+        { keys: "H", what: "Home" },
         { keys: "L  /", what: "The library" },
         { keys: "Tab", what: "Sidebar, and back" },
         { keys: "M", what: "Menu: modes and rooms" },

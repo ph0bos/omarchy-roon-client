@@ -125,6 +125,10 @@ full window.
 A summoned window, over whatever you are working in, on the screen you are
 looking at. Escape closes it; it remembers where you were.
 
+**Home** is where it opens: what is playing, Roon Radio, your playlists, your
+genres, and your albums. Not "recently played" or "made for you" — a Roon
+extension cannot see those, so this page does not pretend to.
+
 Down the left is your library — Albums, Artists, Genres, Composers, Playlists,
 Live radio — and each one is a place Roon can open directly rather than a folder
 you have to walk to. The room you are playing to sits at the foot of it, because
@@ -154,7 +158,12 @@ object with an address.
 
 **The queue** — what is coming next in the pinned room, with the count and the
 time left. Click any row to play from there; everything after it stays. Roon's
-own `play_from_here`, so it behaves exactly as it does on your phone.
+own `play_from_here`, so it behaves exactly as it does on your phone. The next
+nine also sit beside the artwork on the now-playing page when the window is
+wide enough.
+
+Reordering and removing are not here because they are not in the API — see
+[Known constraints](#known-constraints).
 
 ![The queue](docs/screenshots/overlay-queue.png)
 
@@ -168,14 +177,15 @@ switches everything: the bar, the media keys and the queue all follow the same
 pinned zone. `?` shows the keyboard map.
 
 ```bash
+omarchy-shell roon home             # the landing page
 omarchy-shell roon overlay          # now playing
 omarchy-shell roon library          # straight to the library
 omarchy-shell roon queue            # straight to the queue
 ```
 
-Inside: `Space` play/pause, `←`/`→` previous and next, `Tab` sidebar, `N` now
-playing, `L` library, `Q` queue, `/` search, `M` menu, `?` keys, `Escape` to
-close.
+Inside: `Space` play/pause, `←`/`→` previous and next, `Tab` sidebar, `H` home,
+`N` now playing, `L` library, `Q` queue, `/` search, `M` menu, `?` keys,
+`Escape` to close.
 
 ### First run
 
@@ -251,6 +261,14 @@ a bug:
   albums are. It works, and it is why there is no way to link to one.
 - **One queue at a time.** The daemon holds a single queue subscription, and it
   follows the pinned zone. Pin another room to see its queue.
+- **A queue cannot be edited.** `play_from_here` is the only queue verb the
+  extension API has: asked directly, a Core answers `remove_from_queue`,
+  `move_in_queue`, `reorder_queue` and `clear_queue` the way it answers a method
+  that does not exist. Reordering and removing have to happen in Roon's own app.
+- **No "recently played".** The browse root an extension sees is Library,
+  Playlists, My Live Radio, Genres and Settings — there is no history and no
+  recently-added, which is why Home shows what it can rather than what Apple
+  Music would.
 - **Discovery is fragile.** Omarchy's default firewall drops the reply, and a Core
   in a bridge-networked container never sees the broadcast at all. There are three
   discovery tiers for this reason, and `doctor` will tell you which one is in play.

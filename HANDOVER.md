@@ -179,6 +179,13 @@ Room names are a floor plan; a library is a listening history.
    list stays a list, and both album and artist pages wear the artwork Roon
    puts on the list object.
 
+Home, the landing page, is built only from what a Roon extension can see: there
+is no recently-played and no recently-added in the browse root, and a queue
+cannot be edited at all (`play_from_here` is the transport service's only queue
+verb — the Core answers `remove_from_queue` and friends the way it answers a
+method that does not exist). Both are written up in `CONTEXT.md`; do not spend
+an afternoon looking for either.
+
 The layout is a sidebar down the left with the library's roots, a page beside
 it, and one transport strip along the bottom — Apple Music's and TIDAL's shape,
 not the header-tabs the first pass had. Now playing takes the whole window. See

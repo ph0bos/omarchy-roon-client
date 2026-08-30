@@ -613,6 +613,7 @@ Item {
     function overlay(): string   { return root.openView("nowPlaying") ? "ok" : "unhandled" }
     function queue(): string     { return root.openView("queue") ? "ok" : "unhandled" }
     function library(): string   { return root.openView("browse") ? "ok" : "unhandled" }
+    function home(): string      { return root.openView("home") ? "ok" : "unhandled" }
     function notifications(): string {
       root.toggleNotifications()
       return root.notificationsOn ? "off" : "on"

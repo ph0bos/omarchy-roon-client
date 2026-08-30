@@ -35,6 +35,137 @@ Item {
 
   readonly property var outputFormat: svc ? svc.outputFormat : null
 
+  // What is coming after this. The queue is already being kept live for the
+  // queue view, so this costs nothing but the space -- and only takes it when
+  // there is space to take: below about 820px the record needs the whole width
+  // more than the list does.
+  readonly property bool roomy: width > Style.space(820)
+
+  // The rows after whatever is playing. Which row that is has to be matched on
+  // the display strings -- `now_playing` carries no track id -- so a wrong
+  // guess shows one row too many, which is a cosmetic price worth paying.
+  readonly property var upNext: {
+    if (!svc || !svc.queue) return []
+    var queue = svc.queue
+    var start = 0
+    if (svc.hasTrack) {
+      for (var i = 0; i < queue.length; i++) {
+        if (String(queue[i].title || "") === svc.title
+            && String(queue[i].artist || "") === svc.artist) { start = i + 1; break }
+      }
+    }
+    return queue.slice(start, start + 9)
+  }
+
+  // ---- up next ----
+  Item {
+    id: upNextPane
+    anchors.right: parent.right
+    anchors.rightMargin: Style.space(26)
+    anchors.top: parent.top
+    anchors.bottom: parent.bottom
+    anchors.topMargin: Style.space(34)
+    anchors.bottomMargin: Style.space(34)
+    width: Style.space(300)
+    visible: root.roomy && root.upNext.length > 0
+    opacity: visible ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: Design.base } }
+
+    Text {
+      textFormat: Text.PlainText
+      id: upNextTitle
+      anchors.top: parent.top
+      anchors.left: parent.left
+      text: "Up next"
+      color: root.foreground
+      opacity: 0.85
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      font.weight: Font.DemiBold
+    }
+
+    Column {
+      anchors.top: upNextTitle.bottom
+      anchors.topMargin: Style.space(10)
+      anchors.left: parent.left
+      anchors.right: parent.right
+      spacing: Style.space(2)
+
+      Repeater {
+        model: root.upNext
+
+        Item {
+          id: upNextRow
+          required property var modelData
+          required property int index
+
+          width: parent.width
+          height: Style.space(34)
+
+          Rectangle {
+            anchors.fill: parent
+            radius: Style.space(3)
+            color: upNextHover.containsMouse ? Color.menu.selectedBackground : "transparent"
+            Behavior on color { ColorAnimation { duration: Design.fast } }
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            id: upNextNumber
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(16)
+            text: String(upNextRow.index + 1)
+            color: Color.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Column {
+            anchors.left: upNextNumber.right
+            anchors.leftMargin: Style.space(8)
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
+
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              text: String(upNextRow.modelData.title || "")
+              elide: Text.ElideRight
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              width: parent.width
+              text: String(upNextRow.modelData.artist || "")
+              elide: Text.ElideRight
+              color: Color.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              opacity: 0.8
+            }
+          }
+
+          MouseArea {
+            id: upNextHover
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              if (root.svc) root.svc.playFromHere(upNextRow.modelData.queue_item_id)
+            }
+          }
+        }
+      }
+    }
+  }
+
   // The blurred sleeve behind everything. Kept well back: it is a wash, not a
   // picture, and text has to stay readable over it on light themes too.
   RoundedImage {
@@ -60,7 +191,15 @@ Item {
   }
 
   Column {
-    anchors.centerIn: parent
+    id: stage
+    // Centred in what is left after the queue takes its column, so the record
+    // stays the middle of its own half rather than sliding off to one side.
+    anchors.verticalCenter: parent.verticalCenter
+    anchors.horizontalCenter: parent.horizontalCenter
+    anchors.horizontalCenterOffset: root.roomy ? -Style.space(160) : 0
+    Behavior on anchors.horizontalCenterOffset {
+      NumberAnimation { duration: Design.base; easing.type: Easing.OutCubic }
+    }
     width: Math.min(parent.width - Style.space(48), Style.space(560))
     spacing: Style.space(18)
 

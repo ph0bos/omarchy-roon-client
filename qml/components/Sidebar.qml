@@ -31,6 +31,7 @@ Item {
     {
       title: "",
       items: [
+        { key: "home",       label: "Home",        glyph: "\uf015" },
         { key: "nowPlaying", label: "Now playing", glyph: "" },
         { key: "queue",      label: "Queue",       glyph: "" }
       ]

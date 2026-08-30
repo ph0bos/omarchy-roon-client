@@ -85,7 +85,8 @@ Item {
     }
     var requested = String(args.view || "nowPlaying")
     if (requested === "library") requested = "browse"
-    if (requested !== "queue" && requested !== "browse") requested = "nowPlaying"
+    if (requested !== "queue" && requested !== "browse" && requested !== "home")
+      requested = "nowPlaying"
     root.requestedView = requested
     root.currentView = root.blocked ? "setup" : requested
     root.menuOpen = false
@@ -131,7 +132,7 @@ Item {
   // into a record if that is where I left.
   function goTo(key, reset) {
     if (root.currentView !== "nowPlaying") root.lastPageView = root.place
-    if (key === "nowPlaying" || key === "queue") {
+    if (key === "nowPlaying" || key === "queue" || key === "home") {
       root.currentView = key
       return
     }
@@ -189,9 +190,11 @@ Item {
   property bool nowPlayingLoaded: false
   property bool queueLoaded: false
   property bool browseLoaded: false
+  property bool homeLoaded: false
 
   function markLoaded(view) {
-    if (view === "queue") root.queueLoaded = true
+    if (view === "home") root.homeLoaded = true
+    else if (view === "queue") root.queueLoaded = true
     else if (view === "browse") root.browseLoaded = true
     else if (view === "nowPlaying") root.nowPlayingLoaded = true
   }
@@ -240,6 +243,9 @@ Item {
           event.accepted = true
         } else if (event.key === Qt.Key_N) {
           root.currentView = "nowPlaying"
+          event.accepted = true
+        } else if (event.key === Qt.Key_H) {
+          root.goTo("home", false)
           event.accepted = true
         } else if (event.key === Qt.Key_Right) {
           root.svc.next()
@@ -454,6 +460,33 @@ Item {
             svc: root.svc
             foreground: root.foreground
             fontFamily: root.fontFamily
+          }
+        }
+
+        Loader {
+          id: homeLoader
+          anchors.fill: content
+          active: root.homeLoaded
+          opacity: root.currentView === "home" && !root.blocked ? 1 : 0
+          visible: opacity > 0.01
+          Behavior on opacity { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
+
+          sourceComponent: HomeView {
+            svc: root.svc
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onNavigate: function(key) { root.goTo(key, true) }
+            // A shelf card and a playlist row both mean "open this", and the
+            // library view is what knows how to open things -- so the home page
+            // hands it the item rather than growing a second browse cursor.
+            onOpenItem: function(hierarchy, index) {
+              root.goTo(hierarchy, true)
+              // The Loader may only be resolving on this very call, so the
+              // hand-off waits a tick rather than racing it.
+              Qt.callLater(function() {
+                if (browseLoader.item) browseLoader.item.openLater(index)
+              })
+            }
           }
         }
 
