@@ -69,7 +69,7 @@ QUEUE_MAX_ITEMS = 100
 REGINFO = {
     "extension_id": "org.omarchy.roon",
     "display_name": "Roon for Omarchy",
-    "display_version": "0.2.0",
+    "display_version": "0.2.1",
     "publisher": "ph0bos",
     "email": "noreply@omarchy.local",
     "website": "https://github.com/ph0bos/omarchy-roon-client",

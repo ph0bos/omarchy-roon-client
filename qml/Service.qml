@@ -622,10 +622,15 @@ Item {
       return root.zoneName === "" ? "(no zone)" : root.zoneName
     }
     function status(): string {
-      if (!root.daemonUp) return "daemon down: " + root.lastError
-      if (!root.connected) return "no MPRIS player"
+      // `surfaces` is the one number worth having here: a keybinding that
+      // appears to do nothing raises exactly one question -- did the summon
+      // reach the plugin -- and this answers it without a screenshot.
+      var surfaces = " · surfaces open: " + root.openSurfaces
+      if (!root.daemonUp) return "daemon down: " + root.lastError + surfaces
+      if (!root.connected) return "no MPRIS player" + surfaces
       return root.zoneName + ": " + (root.playing ? "playing" : "paused")
              + (root.hasTrack ? " — " + root.title + " · " + root.artist : "")
+             + surfaces
     }
   }
 }

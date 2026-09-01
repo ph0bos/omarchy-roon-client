@@ -97,7 +97,7 @@ Item {
     root.currentView = root.blocked ? "setup" : requested
     root.menuOpen = false
     root.shortcutsOpen = false
-    root.targetScreen = root.pickScreen()
+    root.targetScreenName = root.pickScreenName()
     root.opened = true
     root.markLoaded(root.currentView)
     // Tell the service a surface is up: it polls faster while something is
@@ -179,24 +179,36 @@ Item {
   // Which screen to open on, decided at open time rather than left to whatever
   // the window was created against.
   //
-  // `keepLoaded` keeps this window alive between summons, so it can outlive the
-  // monitor it was first created on. Unplug a display -- or let one come back
-  // after a fallback output -- and the surface holds a screen that no longer
-  // exists: Quickshell logs "Layershell screen does not correspond to a real
-  // screen" and the overlay never maps again until the shell is restarted.
+  // A NAME is stored, never a screen object, and the object is resolved from
+  // `Quickshell.screens` every time the binding is read. This is not
+  // fastidiousness: `keepLoaded` keeps this window alive between summons and a
+  // plugin hot-reload rebuilds the shell's screen objects underneath it, so a
+  // held reference outlives what it points at. Quickshell then logs
+  //
+  //     Layershell screen does not correspond to a real screen
+  //
+  // and the overlay never maps again -- the plugin looks dead, IPC and
+  // keybinding alike, until `omarchy restart shell`. Which is exactly what it
+  // did, after an edit to a file in the plugin directory hot-reloaded it.
+  //
   // Re-picking on every open also means it opens on the screen you are actually
   // looking at.
-  property var targetScreen: null
+  property string targetScreenName: ""
 
-  function pickScreen() {
-    var monitor = Hyprland.focusedMonitor
-    var name = monitor ? String(monitor.name || "") : ""
+  readonly property var targetScreen: {
+    if (root.targetScreenName === "") return null
     var screens = Quickshell.screens
     for (var i = 0; i < screens.length; i++) {
-      if (String(screens[i].name) === name) return screens[i]
+      if (String(screens[i].name) === root.targetScreenName) return screens[i]
     }
-    // No match: let the compositor choose.
+    // The monitor went away between summons. Null lets the compositor choose,
+    // which is a working window rather than no window at all.
     return null
+  }
+
+  function pickScreenName() {
+    var monitor = Hyprland.focusedMonitor
+    return monitor ? String(monitor.name || "") : ""
   }
 
   // Views stay loaded once visited. Destroying and rebuilding them on every

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "quickshell.roon",
   "name": "Roon",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "ph0bos",
   "description": "Roon in the Omarchy shell: what is playing in your zone, an endpoint on this machine, transport, zone switching, and a summonable player with the queue.",
   "kinds": [

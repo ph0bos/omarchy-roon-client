@@ -866,6 +866,38 @@ created the library view, whose own first load is already in flight. Without
 taking a ticket first, that answer lands a moment later and paints a library
 page under a search header -- which is exactly what it did, once.
 
+### A keybinding that could not be tested, and what was found instead
+
+Reported: `SUPER+R` stopped opening the player. Everything that could be checked
+was, and none of it was at fault -- the bind is registered exactly once
+(`modmask 64`, key `R`; Omarchy's reminder bindings are all `SUPER+CTRL+R`, so
+there is no collision), `omarchy-shell` resolves in the compositor's own PATH at
+`/usr/bin/omarchy-shell`, and the IPC verb maps the window every time it is
+called from a terminal.
+
+**Synthetic keypresses cannot test a Hyprland bind.** `wtype` sends keys through
+the virtual-keyboard protocol and they never reach the bind layer: a temporary
+`SUPER+F9` bind wired to write a file was pressed that way and the file was
+never created, while the bind itself was registered. An earlier "the binding
+works" test in this project was therefore worthless -- what it photographed was
+a window opened moments before by IPC. A keybinding can only be tested by a
+person pressing the key.
+
+What WAS observed, once: a summon returning `ok` while no layer appeared, with
+
+    Layershell screen does not correspond to a real screen
+
+in the shell's log, cleared by `omarchy restart shell`. It happened after an
+edit to a file in the plugin directory hot-reloaded the shell. It could not be
+reproduced on demand afterwards, so it is not proven to be the reported fault --
+but the mechanism is real and worth removing: the overlay held a *screen object*
+across summons, and `keepLoaded` means it can outlive the shell's screen objects
+through a reload. It now stores the monitor's NAME and resolves the object from
+`Quickshell.screens` every time the binding is read, so a stale reference cannot
+be assigned. `roon status` also reports how many of the plugin's windows are
+open, because "did the summon reach the plugin" is the one question a dead-
+looking keybinding actually asks.
+
 ### Proven end to end against a live Core
 
 Discovery through all three tiers; register; silent reconnect with a stored token;

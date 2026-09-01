@@ -209,6 +209,21 @@ itself.
 `omarchy-roon-endpoint doctor` is the same ladder in a terminal, plus the audio
 and firewall checks. It is read-only.
 
+### If the window stops appearing
+
+Updating the plugin (or editing any file in it) makes the shell hot-reload it,
+and a hot reload is not always clean: the surface can end up holding a screen
+that no longer exists, and then nothing summons it — keybinding and terminal
+alike. `omarchy-shell roon status` tells you whether a summon is reaching the
+plugin at all; it reports how many of its windows are open.
+
+```bash
+omarchy restart shell
+```
+
+is the reliable fix, and it is what to try first if a keybinding that used to
+work stops.
+
 ## How it works
 
 ```
