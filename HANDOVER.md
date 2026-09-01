@@ -1,7 +1,7 @@
-# Handover: the full Roon client (R2)
+# Handover: after v0.2.1
 
-R1 is shipped and listed-pending. This is what the next person needs to know to
-build the client without rediscovering anything.
+R2 shipped. This is what the next person needs to know to keep building without
+rediscovering anything.
 
 Read `CONTEXT.md` first — it is the design log and holds the *why* behind every
 decision below. This file is the *what next*.
@@ -13,186 +13,113 @@ decision below. This file is the *what next*.
 | | |
 |---|---|
 | Repo | https://github.com/ph0bos/omarchy-roon-client |
-| Released | v0.1.1, CI green (7 jobs), marketplace submission [#3618](https://github.com/omacom/omarchy-plugin-marketplace/issues/3618) awaiting maintainer capability review |
-| Shipped | endpoint (RoonBridge as user, via PipeWire), daemon, bar icon + mini player, MPRIS, notifications, quality badge, spectrum analyser |
-| Tests | 103 + 7 live (opt-in), fixtures scrubbed, CI enforces the scrub |
+| Released | **v0.2.1**, CI green, Release workflow gates the tag on the manifest version |
+| Listing | marketplace submission [#3618](https://github.com/omacom/omarchy-plugin-marketplace/issues/3618) validated at v0.2.1, still awaiting the maintainer's **capability review** — nothing a push can move |
+| Shipped | endpoint (RoonBridge as user, via PipeWire), daemon, bar icon + mini player, MPRIS, notifications, quality badge, analyser — **and the player**: sidebar, home, now playing, library, browse, search, queue, first-run wizard |
+| Tests | 161 + 7 live (opt-in), fixtures scrubbed, CI enforces the scrub |
 
-## What R2 is
+**To update the marketplace listing, edit the issue body.** Validation re-runs on
+`issues: edited`, not on comments — see `route-issue-automation.yml` in the
+marketplace repo. A comment does nothing.
 
-The full client: **browse, search, queue, artist and album views** — the surfaces
-R1 deliberately fenced out because you drive playback from your phone.
+## What the API cannot do, with evidence
 
-The daemon already speaks everything needed for this. R2 is mostly interface.
+These were each established against a live Core. Do not spend an afternoon
+re-testing them; do re-test if Roon ships a new API version.
 
-**Shipped so far:** the queue end to end (daemon subscription, `/queue`,
-`play_from_here`), the overlay that renders it, a now-playing view with the
-analyser, the quick menu, the keyboard map, the first-run wizard on `/setup`,
-and browse + search on `/page`. What is left is presentation rather than
-protocol: a grid where a list is the wrong shape, and album and artist headers.
+- **A queue cannot be edited.** `play_from_here` is the transport service's only
+  queue verb. Asked with an empty body, `remove_from_queue`, `move_in_queue`,
+  `reorder_queue` and `clear_queue` all answer the way a method that does not
+  exist answers (`InvalidRequest`, no body), where a real verb names the field
+  it wanted. `spikes/probe-queue-verbs.py` re-runs that question safely.
+- **There is no recently-played and no recently-added.** The browse root an
+  extension sees is Library, Playlists, My Live Radio, Genres, Settings; Library
+  holds Search, Artists, Albums, Tracks, Composers, Tags. Home is built from
+  what exists rather than from what Apple Music would show.
+- **There is no metadata API.** `now_playing` is three display strings and an
+  image key. An artist page is a *position in a browse tree*, which is why
+  opening one works and linking to one cannot.
+- **There are no lyrics.**
+- **QML cannot reach the daemon's `/ws`.** Quickshell ships no WebSocket module.
+  Reactive playback state comes over MPRIS; everything else is HTTP.
 
-## Settled: it is an overlay, and the TIDAL UX ports into it
+## Constraints that still bite
 
-**R2 is an `entryPoints.overlay` surface, not a standalone app.** One more entry
-in `manifest.json`, summoned with a keybinding, with `qs.Ui` and `qs.Commons`
-available — so the theme is simply correct and nothing needs a theme adapter.
+**Browse is a stateful cursor per `multi_session_key`.** Use `POST /page`, which
+does the browse+load pair under a lock per key. Never call `/browse` and `/load`
+from a surface. Paging uses `/load` on purpose: reading another window must not
+move the cursor.
 
-What settled it: `~/Projects/omarchy-tidal` already holds ~5,400 lines of QML for
-exactly these surfaces (`Overlay.qml`, `HomeView`, `DetailView`, `PlayerView`,
-`NowPlayingView`, `SetupWizard`, and the component library), and every one of
-them imports `qs.Commons` or `qs.Ui`. As an overlay they port with their theming
-intact; as an app each would be a rewrite against a theme adapter first.
+**An `item_key` is only valid inside the session that produced it.** Anything
+handing a row between surfaces sends the hierarchy and the *index*, and the
+receiving view re-browses and opens that position. Home does exactly this.
 
-The port is a substitution, not a rewrite: `TidalApi.js` → `Roond.js` (R1 has
-it), Mopidy RPC → the local API. The one shape that genuinely differs is the
-data: Tidal returns `{id, title, artist}` objects, Roon returns positions in a
-browse tree. See *R2 is an overlay* in `CONTEXT.md`.
-
-## Still outstanding from R1
-
-~~**The first-run setup wizard was chosen and never built.**~~ **Built.** The
-daemon computes the ladder at `GET /setup` and `qml/components/SetupWizard.qml`
-renders it, polling every 2s while on screen. See *The menu, the keyboard map,
-and the wizard* in `CONTEXT.md` for the three decisions inside it — the one
-worth carrying is that a `blocked` rung outranks an earlier `pending` one,
-because pairing happens during registration and "first unfinished" points at the
-wrong step. The
-decision was: put it in the UI so a new user never opens a terminal.
-
-    0. discovery reachable (ufw allows udp/9003, or a host was entered)
-    1. Core found
-    2. paired
-    3. extension approved in Roon → Settings → Extensions  ← blocking, poll it
-    4. RoonBridge running
-    5. zone visible to the Core
-
-Rung 3 is the one that traps people: an unapproved extension does not fail, it
-simply never answers. `AwaitingApproval` in `session.py` already models this and
-the daemon pushes an `awaiting_approval` event; nothing renders it yet.
-
-## Gaps in the daemon R2 will hit immediately
-
-- ~~No queue route.~~ **Done.** `queue.py` holds the merge, `RoonSession` keeps
-  one subscription following the pinned zone at 100 items, and the API gained
-  `GET /queue`, `POST /play_from_here` and a `queue` WebSocket event. `/queue`
-  reads the daemon's own memory, so it is as cheap as `/zones`, and `--demo`
-  serves a queue too. **The one thing to know:** only the `Subscribed` payload is
-  verified against a live Core — the `changes` operations come from
-  `node-roon-api-transport`, so an operation `QueueStore` does not recognise sets
-  `stale` and the session re-subscribes rather than guessing. If a live Core ever
-  shows a third operation, that is where to add it.
-- ~~No browse session management.~~ **Done.** `browse.py` owns a lock per
-  `multi_session_key` and `POST /page` is the browse+load pair as one move.
-  Two rules survive: every surface passes its OWN key, and paging uses `/load`
-  so it does not move the cursor.
-
-## Constraints that will bite
-
-**Browse is a stateful cursor, one per `multi_session_key`.** Two surfaces
-browsing at once without distinct keys yank each other around. Search is the case
-that forces it; it needs its own key, always.
-
-**There is no metadata API.** `now_playing` is three pre-formatted display
-strings and an image key — no track, album or artist ids. Browse returns
-`{title, subtitle, image_key, hint}` and a cursor. Every "artist page" is a
-position in a server-driven tree, not an object you can fetch.
-
-**Search is a conversation.** Browse returns an item carrying `input_prompt`; you
-re-browse with `opts.input`; then you load. Two round trips minimum, no typeahead.
-Debounce ~350ms.
-
-**Quickshell ships no WebSocket module** and `qt6-websockets` is not installed, so
-QML cannot use the daemon's `/ws`. Reactive playback state comes over MPRIS; HTTP
-is for everything MPRIS cannot express. As an overlay, that settles it: playback state
-comes over MPRIS, and everything MPRIS cannot express is an HTTP call.
+**Every async navigation must take a ticket.** A serial bumped per request, with
+only the current ticket allowed to draw. Three separate bugs in this project were
+the same shape: a slow answer landing after a newer question and painting the
+wrong page. Paging checks it too, because a stale window appends into the wrong
+list.
 
 **Art comes from the Core**, not the daemon: `<image_base>/<key>?scale=fit&width=…`.
-`image_base` is in `/state`.
+`image_base` is in `/state`, and a session may override it — `--demo` serves its
+own sleeve.
 
-**Browse hierarchies** are `browse`, `playlists`, `internet_radio`, `albums`,
-`artists`, `genres`, `composers`, `search`. Jumping straight into one avoids
-walking the tree.
+## Gotchas that cost real time
 
-## Gotchas that cost real time this session
-
-- **Never name a QML property `x`, `y`, `width`, `height` or `scale`.** They are
-  FINAL on `QQuickItem`; shadowing one makes the whole widget fail to load with
-  nothing but `Cannot override FINAL property` in the journal. No error on screen.
-- **`Ui/Panel` has no size of its own.** A Panel-based widget must set
-  `implicitWidth`/`implicitHeight` or it occupies zero pixels: invisible,
-  unclickable, and silent.
-- **A QML `color` cannot be compared to a string.** `c !== "transparent"` is a
-  type mismatch that is always true.
-- **SOOD deduplicates on `_tid`.** Reuse one and every query after the first is
-  answered with silence, which looks exactly like an empty network.
-- **PyGObject's D-Bus vtable takes five args for a property getter**, not six —
-  no trailing `GError`. Get it wrong and the bus name is claimed, introspection
-  is perfect, and every read returns "Unable to retrieve property".
-- **The plugin is symlinked into `~/.config/omarchy/plugins/`.** Hot-reload does
-  not always pick changes up; `omarchy restart shell` is the reliable way, and
-  a stale shell is why an "impossible" bug will not reproduce.
+- **Never name a QML property `x`, `y`, `width`, `height` or `scale`** — FINAL on
+  `QQuickItem`; shadowing one makes the widget fail to load with nothing but
+  `Cannot override FINAL property` in the journal.
+- **A `Row` or `Column` ignores its children's anchors.** Two bugs came from this,
+  including a mark that was never once aligned with the wordmark beside it. If
+  you need to position a child, do not put it in a positioner.
+- **A binding derived from a property is not reliably current inside that
+  property's own change handler.** Compute the value in the handler instead.
+- **A synthetic keypress cannot test a Hyprland bind.** `wtype` goes through the
+  virtual-keyboard protocol and never reaches the bind layer — verified with a
+  probe bind that never fired. Only a person pressing the key can test one.
+- **A hot reload can leave the overlay unable to map** (`Layershell screen does
+  not correspond to a real screen`). `omarchy restart shell` is the fix, and
+  `omarchy-shell roon status` reports how many of the plugin's windows are open,
+  which says whether a summon reached the plugin at all.
+- **`Ui/Panel` has no size of its own** — set `implicitWidth`/`implicitHeight`.
+- **A QML `color` cannot be compared to a string.**
+- **SOOD deduplicates on `_tid`.**
+- **PyGObject's D-Bus vtable takes five args for a property getter**, not six.
 
 ## Working on it
 
 ```bash
-python -m omarchy_roond --serve --demo   # synthetic zones, no Core, no subscription
+python -m omarchy_roond --serve --demo   # invented zones, library and queue
 python -m omarchy_roond --browse         # exercise a real Core from the terminal
-pytest                                    # 103 tests, no Core
+pytest                                    # 161 tests, no Core
 ROON_LIVE_HOST=<core-ip> pytest tests/test_live.py
 ./bin/omarchy-roon-endpoint doctor        # read-only; first thing when anything breaks
+omarchy restart shell                     # after any QML change; hot reload is not reliable
 ```
 
-**`--demo` is how the UI gets built and photographed.** It serves invented zones,
-invented tracks and a generated sleeve, so no subscription is needed and nothing
-personal reaches a screenshot. Screenshots for the README are taken this way, on
-the `osaka-jade` theme; restore the theme afterwards.
+**`--demo` is how the UI is built and photographed.** It now serves an invented
+library — albums, artists, a working search and a twelve-track queue — so no
+subscription is needed and nothing personal reaches a screenshot. README
+screenshots are taken this way on the `osaka-jade` theme; restore the theme
+afterwards, and **verify what is in the frame against the daemon's own data** —
+a screenshot once came out showing the real library under demo artwork because
+the shell had not actually restarted.
 
 **ruff is not packaged on this machine.** Fetch the standalone binary or CI will
-be the first thing to see a lint error:
-
-```bash
-curl -sSL https://github.com/astral-sh/ruff/releases/latest/download/ruff-x86_64-unknown-linux-gnu.tar.gz | tar -xz
-```
+be the first to see a lint error.
 
 **Never commit anything captured from a real Core without scrubbing it.**
 `scripts/sanitise-fixtures.py` does it reproducibly and CI enforces `--check`.
-Room names are a floor plan; a library is a listening history.
 
-## Suggested order
+## What is worth doing next
 
-1. ~~Settle app vs overlay.~~ Overlay.
-2. ~~Add the queue to the daemon.~~ Done.
-3. ~~Port `Overlay.qml` and the component library across.~~ **Done.** The
-   overlay ships with four views -- now playing, the library, the queue and
-   first-run -- on the ported chrome, transport strip and component library.
-   See *The overlay, as built* in `CONTEXT.md`. README screenshots are taken,
-   under `--demo` on `osaka-jade`, as the working notes describe.
-4. ~~Build the first-run wizard.~~ **Done**, along with the quick menu (`M`:
-   modes, Roon Radio, notifications, rooms) and the keyboard map (`?`).
-5. ~~Browse navigation, with one `multi_session_key` per surface.~~ **Done** —
-   as `POST /page`, which does the browse+load pair under a lock per session
-   key. Surfaces must never call `/browse` and `/load` themselves.
-6. ~~Search on its own session key, debounced.~~ **Done**, 350ms, in the
-   library view's own field.
-7. ~~Artist and album views~~ **Done.** They are the browse tree — searching
-   and pushing into a result lands on the artist page, because that is all an
-   artist page is. A wall of covers now draws as a grid (`ArtCard`), a track
-   list stays a list, and both album and artist pages wear the artwork Roon
-   puts on the list object.
-
-Home, the landing page, is built only from what a Roon extension can see: there
-is no recently-played and no recently-added in the browse root, and a queue
-cannot be edited at all (`play_from_here` is the transport service's only queue
-verb — the Core answers `remove_from_queue` and friends the way it answers a
-method that does not exist). Both are written up in `CONTEXT.md`; do not spend
-an afternoon looking for either.
-
-The layout is a sidebar down the left with the library's roots, a page beside
-it, and one transport strip along the bottom — Apple Music's and TIDAL's shape,
-not the header-tabs the first pass had. Now playing takes the whole window. See
-*The layout* in `CONTEXT.md`.
-
-`ArtCard` is ported. What is still unported from `omarchy-tidal` is `Shelf`,
-`LibraryGrid`, `ScrollHint`, `TiltFrame` and `HomeView` — the furniture for a
-*landing page* of library roots, recently played and a Roon Radio toggle, which
-is the obvious next surface and the one thing the browse tree cannot give you
-for free.
+1. **Keyboard navigation on Home.** Every other view has it; Home is mouse-only.
+2. **Zones as a surface.** Grouping outputs, per-output volume and transfer are
+   in the transport API (`group_outputs`, `transfer_zone`) and nothing renders
+   them — the sidebar's room row only switches the pin.
+3. **Settings.** Notifications, the pinned zone's default, and the endpoint's own
+   state are spread between the menu and the terminal.
+4. **The marketplace review.** If a maintainer asks about the `installer`
+   capability flag, it is `backend/omarchy_roond/setup.py` matching on filename:
+   it computes the first-run ladder read-only and installs nothing. Renaming it
+   to `firstrun.py` would remove the flag if that is easier than explaining it.
