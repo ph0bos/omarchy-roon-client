@@ -946,8 +946,14 @@ driven from a phone or another Roon control device; there is no browsing UI here
 yet. That is a genuinely useful product on day one: Roon ships no Linux endpoint
 UI at all, and the hard part -- being an endpoint -- is a wrapper, not a rewrite.
 
-**R2 -- the full client.** Now Playing, Zones, Queue, Search, browse, lyrics. The
-daemon already serves all of it.
+**R2 -- the full client, v0.2.0.** A summoned player with a sidebar: Home, Now
+Playing (full-bleed, the record's own colour, a leaning sleeve and Up next), the
+library with browse and search, the queue, and the first-run wizard. The daemon
+grew a queue subscription, a `/setup` ladder and a browse cursor to serve them.
+
+What R2 does NOT have, because the extension API does not: lyrics, a queue that
+can be edited, and any notion of recently played. Each is written up above with
+the evidence rather than left as a gap someone will re-investigate.
 
 ## The bar widget
 
